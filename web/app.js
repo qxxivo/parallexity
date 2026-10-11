@@ -44,6 +44,7 @@
     ['browser-choose','browser-focus','browser-detach','browser-refresh'].forEach(id=>$(id).disabled=true);
     $('browser-tab-list').querySelectorAll?.('button').forEach(button=>button.disabled=true);
     $('browser-actions').querySelectorAll?.('button').forEach(button => button.disabled = true);
+    $('browser-volume').disabled=$('browser-mute').disabled=$('browser-resume').disabled=true;browserVolumeEditing=false;browserVolumeTarget=null;
     cancelGesture();
   }
   function render() {
@@ -135,7 +136,7 @@
     }
   }
   const browserLabels = {'play':'Воспроизвести','pause':'Пауза','seek-back':'−10 сек','seek-forward':'+10 сек','skip-intro':'Пропустить заставку','skip-ad':'Пропустить рекламу','next-episode':'Следующая серия','fullscreen':'Полный экран окна','exit-fullscreen':'Выйти из полного экрана'};
-  let extraPending = false;
+  let extraPending = false,browserVolumeEditing=false,browserVolumeTarget=null;
   function renderExtras() {
     $('viewing-toggle').disabled = !connected || extraPending;
     $('viewing-toggle').setAttribute('aria-pressed', String(!!state.viewingMode));
@@ -152,6 +153,16 @@
     $('browser-detach').classList.toggle('hidden',!canChoose||!browser.selectedTab);
     $('browser-focus').disabled=$('browser-detach').disabled=!connected||extraPending;
     $('browser-refresh').disabled=!connected||extraPending||!canChoose;
+    const resume=canChoose&&!browser.selectedTab?browser.tabs.find(tab=>tab.id===browser.resumeTab):null;
+    $('browser-resume').classList.toggle('hidden',!resume);$('browser-resume').disabled=!connected||extraPending||!resume;
+    $('browser-resume-title').textContent=resume?.title||'';
+    const volumeReady=!!browser?.connected&&!!browser.selectedTab&&Number.isInteger(browser.volume)&&typeof browser.muted==='boolean'&&browser.actions.includes('set-volume');
+    $('browser-volume-card').classList.toggle('hidden',!volumeReady);
+    if(!browserVolumeEditing||browserVolumeTarget!==browser?.selectedTab){$('browser-volume').value=volumeReady?browser.volume:0;$('browser-volume-number').textContent=volumeReady?browser.volume+'%':'';}
+    $('browser-volume').disabled=!connected||extraPending||!volumeReady;
+    $('browser-mute').disabled=!connected||extraPending||!volumeReady||!browser.actions.includes(browser.muted?'unmute-player':'mute-player');
+    $('browser-mute').textContent=browser?.muted?'Включить звук видео':'Выключить звук видео';
+    $('browser-mute').setAttribute('aria-pressed',String(!!browser?.muted));paintRange($('browser-volume'));
     $('browser-hint').textContent = !browser?.connected ? 'В меню значка ПК открой «Расширение браузера…» и подключи расширение.' : !canChoose ? 'Обнови расширение и нажми в нём «Выбирать вкладки с телефона».' : !browser.selectedTab ? 'Открой список и выбери нужную страницу. Вкладки со звуком находятся выше.' : !browser.actions?.length ? 'На этой вкладке пока нет доступного плеера. Открой видео или выбери другую.' : 'Управление выбранной вкладкой. «На ПК» выведет её окно на передний план.';
     renderTabList();
     const actions = (browser?.actions || []).filter(action => Object.hasOwn(browserLabels, action)&&(!browser.selectedTab||!['play','pause','seek-back','seek-forward'].includes(action)));
@@ -209,6 +220,14 @@
   $('browser-search').addEventListener('input',renderTabList);
   $('browser-refresh').addEventListener('click',()=>extraCommand('/api/browser',{action:'refresh-tabs'}));
   $('browser-focus').addEventListener('click',()=>extraCommand('/api/browser',{action:'focus-tab',tabId:state?.browser?.selectedTab}));
+  $('browser-resume').addEventListener('click',()=>{const tab=state?.browser?.tabs?.find(tab=>tab.id===state.browser.resumeTab);if(tab&&!state.browser.selectedTab)void extraCommand('/api/browser',{action:'select-tab',tabId:tab.id});});
+  $('browser-volume').addEventListener('input',()=>{if(!browserVolumeEditing)browserVolumeTarget=state?.browser?.selectedTab;browserVolumeEditing=true;$('browser-volume-number').textContent=$('browser-volume').value+'%';paintRange($('browser-volume'));});
+  $('browser-volume').addEventListener('change',async()=>{
+    const tabId=browserVolumeTarget,volume=Number($('browser-volume').value);
+    try{if(tabId&&tabId===state?.browser?.selectedTab&&Number.isInteger(volume)&&volume>=0&&volume<=100)await extraCommand('/api/browser',{action:'set-volume',tabId,volume});}
+    finally{browserVolumeEditing=false;browserVolumeTarget=null;render();}
+  });
+  $('browser-mute').addEventListener('click',()=>{const browser=state?.browser;if(browser?.selectedTab)void extraCommand('/api/browser',{action:browser.muted?'unmute-player':'mute-player',tabId:browser.selectedTab});});
   $('browser-detach').addEventListener('click',()=>extraCommand('/api/browser',{action:'detach-tab'}));
   $('timer-form').addEventListener('submit', event => {
     event.preventDefault();

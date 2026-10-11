@@ -54,17 +54,19 @@ internal static class SelfTest
         var browser=server.BrowserForTests;
         browser.Pair(server.CreateBrowserCode().Split(':')[1]);
         var tabs=new[]{new BrowserTab(41,"Вечерний фильм · тестовая вкладка","video.test"),new BrowserTab(42,"Музыка · тестовая вкладка","music.test",true),new BrowserTab(43,"Страница без плеера · тестовая вкладка","example.test")};
-        int? selected=41;var generation=Guid.NewGuid().ToString("N");string? ack=null;bool? success=null;var playing=true;var fullscreen=false;
+        int? selected=41,lastTab=41;var videoVolume=65;var videoMuted=false;var generation=Guid.NewGuid().ToString("N");string? ack=null;bool? success=null;var playing=true;var fullscreen=false;
         void Tick()
         {
             var title=tabs.FirstOrDefault(tab=>tab.Id==selected)?.Title??"";
-            var actions=selected is 41 or 42?new[]{playing?"pause":"play","seek-back","seek-forward",fullscreen?"exit-fullscreen":"fullscreen"}:Array.Empty<string>();
-            var command=browser.Report(new(title,actions,ack,success,generation,tabs,selected));ack=null;success=null;
+            var actions=selected is 41 or 42?new[]{playing?"pause":"play","seek-back","seek-forward",fullscreen?"exit-fullscreen":"fullscreen","set-volume",videoMuted?"unmute-player":"mute-player"}:Array.Empty<string>();
+            var command=browser.Report(new(title,actions,ack,success,generation,tabs,selected,lastTab,selected is 41 or 42?videoVolume:null,selected is 41 or 42?videoMuted:null));ack=null;success=null;
             if(command is null)return;
             ack=command.Id;success=true;
-            if(command.Action=="select-tab"){selected=command.TabId;generation=Guid.NewGuid().ToString("N");}
+            if(command.Action=="select-tab"){selected=command.TabId;if(selected is 41 or 42)lastTab=selected;generation=Guid.NewGuid().ToString("N");}
             if(command.Action=="detach-tab"){selected=null;generation=Guid.NewGuid().ToString("N");}
             if(command.Action=="play")playing=true;if(command.Action=="pause")playing=false;
+            if(command.Action=="set-volume")videoVolume=command.Volume!.Value;
+            if(command.Action=="mute-player")videoMuted=true;if(command.Action=="unmute-player")videoMuted=false;
             if(command.Action=="fullscreen")fullscreen=true;if(command.Action=="exit-fullscreen")fullscreen=false;
         }
         Tick();return new System.Threading.Timer(_=>Tick(),null,1000,1000);
@@ -180,6 +182,16 @@ internal static class SelfTest
             var wrongInstruction=bridgeFixture.Report(new("Music",new[]{"pause"},Generation:generation,Tabs:fixtureTabs,SelectedTab:9))!;
             bridgeFixture.Report(new("Music",new[]{"pause"},wrongInstruction.Id,true,generation,fixtureTabs,9));
             Check(!await wrongSelection,"Acknowledgement cannot claim a different selected tab");
+            bridgeFixture.Report(new("Music",new[]{"pause","set-volume","mute-player"},Generation:generation,Tabs:fixtureTabs,SelectedTab:9,ResumeTab:9,Volume:65,Muted:false));
+            Check(bridgeFixture.State is {Volume:65,Muted:false,ResumeTab:9},"Player audio and previous tab reach remote state");
+            Check(!await bridgeFixture.ExecuteAsync("set-volume",7,32),"Player volume is pinned to selected tab");
+            Check(!await bridgeFixture.ExecuteAsync("set-volume",9,101)&&!await bridgeFixture.ExecuteAsync("set-volume",9,-1)&&!await bridgeFixture.ExecuteAsync("set-volume",9),"Player volume rejects missing and out-of-range values");
+            Check(!await bridgeFixture.ExecuteAsync("pause",volume:32),"Volume payload is rejected on other actions");
+            var volumeWork=bridgeFixture.ExecuteAsync("set-volume",9,32);
+            var volumeInstruction=bridgeFixture.Report(new("Music",new[]{"set-volume"},Generation:generation,Tabs:fixtureTabs,SelectedTab:9))!;
+            Check(volumeInstruction is {TabId:9,Volume:32},"Volume command preserves intended tab and level");
+            bridgeFixture.Report(new("Music",new[]{"pause","set-volume"},volumeInstruction.Id,true,generation,fixtureTabs,9,9,32,false));
+            Check(await volumeWork&&bridgeFixture.State.Volume==32,"Volume completes after confirmed player acknowledgement");
             var staleWork=bridgeFixture.ExecuteAsync("pause");
             bridgeFixture.Report(new("New page",new[]{"skip-intro"},Generation:Guid.NewGuid().ToString("N")));
             Check(!await staleWork,"Navigation cancels commands belonging to previous page");
@@ -318,6 +330,12 @@ internal static class SelfTest
             Check((await Post("/api/browser",new{action="select-tab",tabId=999})).StatusCode==HttpStatusCode.Conflict,"Phone cannot select a tab outside the current catalog");
             Check((await client.GetAsync("/api/state")).IsSuccessStatusCode, "Same-origin GET works without Origin header");
             Check((await Post("/api/viewing",new{enabled=true},"https://attacker.invalid")).StatusCode==HttpStatusCode.Forbidden&&!server.ViewingEnabled,"Foreign origin cannot enable viewing mode");
+            Check((await ReportCatalog(new BrowserReport("Music",new[]{"set-volume"},Generation:catalogGeneration,Tabs:catalog,SelectedTab:7,ResumeTab:7,Volume:65,Muted:false))).IsSuccessStatusCode,"Player audio report accepts validated state");
+            Check((await ReportCatalog(new BrowserReport("Music",new[]{"set-volume"},Generation:catalogGeneration,Tabs:catalog,SelectedTab:7,Volume:101,Muted:false))).StatusCode==HttpStatusCode.BadRequest,"Out-of-range reported player volume is rejected");
+            Check((await ReportCatalog(new BrowserReport("Music",new[]{"set-volume"},Generation:catalogGeneration,Tabs:catalog,SelectedTab:7,Volume:65))).StatusCode==HttpStatusCode.BadRequest,"Incomplete audio report is rejected");
+            Check((await ReportCatalog(new BrowserReport("Music",Array.Empty<string>(),Generation:catalogGeneration,Tabs:catalog,ResumeTab:999))).StatusCode==HttpStatusCode.BadRequest,"Resume tab must still exist in catalog");
+            Check((await Post("/api/browser",new{action="set-volume",tabId=99,volume=32})).StatusCode==HttpStatusCode.Conflict,"HTTP volume cannot change another tab");
+            await ReportCatalog(new BrowserReport("Test player",new[]{"skip-intro"},Generation:catalogGeneration,Tabs:catalog,SelectedTab:7));
             Check((await Post("/api/viewing",new{})).StatusCode==HttpStatusCode.BadRequest,"Viewing mode requires an explicit state");
             Check((await Post("/api/viewing",new{enabled=true})).IsSuccessStatusCode&&server.ViewingEnabled&&!inputEnabled,"Trusted phone enables viewing without keyboard access");
             Check((await client.GetFromJsonAsync<RemoteState>("/api/state"))?.ViewingMode==true,"Viewing state is visible on phone");

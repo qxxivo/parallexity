@@ -162,7 +162,7 @@ public sealed class RemoteServer : IAsyncDisposable
             if(!trust.IsTrusted(context.Request.Cookies["pr_session"]))return Results.Unauthorized();
             var request=await context.Request.ReadFromJsonAsync<BrowserCommandRequest>();
             if(request is null||!(BrowserBridge.AllowedActions.Contains(request.Action)||BrowserBridge.TabActions.Contains(request.Action)))return Results.BadRequest();
-            return await browser.ExecuteAsync(request.Action,request.TabId)?Results.Ok(new{done=true}):Results.Json(new{error="Вкладка закрыта или браузер не ответил. Обнови список и проверь расширение."},statusCode:409);
+            return await browser.ExecuteAsync(request.Action,request.TabId,request.Volume)?Results.Ok(new{done=true}):Results.Json(new{error="Вкладка закрыта или браузер не ответил. Обнови список и проверь расширение."},statusCode:409);
         });
         instance.MapPost("/browser/pair",async(HttpContext context)=>
         {
@@ -175,9 +175,10 @@ public sealed class RemoteServer : IAsyncDisposable
             var auth=context.Request.Headers.Authorization.ToString();
             if(!auth.StartsWith("Bearer ")||!browser.Authorized(auth[7..]))return Results.Unauthorized();
             var report=await context.Request.ReadFromJsonAsync<BrowserReport>();
-            if(report?.Title is null||report.Title.Length>140||report.Actions is null||report.Actions.Length>10||report.Actions.Any(a=>!BrowserBridge.AllowedActions.Contains(a))||report.Generation is not {Length:32}||!report.Generation.All(Uri.IsHexDigit))return Results.BadRequest();
+            if(report?.Title is null||report.Title.Length>140||report.Actions is null||report.Actions.Length>12||report.Actions.Any(a=>!BrowserBridge.AllowedActions.Contains(a))||report.Generation is not {Length:32}||!report.Generation.All(Uri.IsHexDigit))return Results.BadRequest();
             if(report.Tabs is { } tabs&&(tabs.Length>200||tabs.Any(t=>t is null||t.Id<=0||t.Title is null||t.Title.Length>100||t.Domain is null||t.Domain.Length>120||t.Domain.Any(c=>char.IsControl(c)||c is '/' or ':' or '?' or '#'))||tabs.Select(t=>t.Id).Distinct().Count()!=tabs.Length||report.SelectedTab is int selected&&!tabs.Any(t=>t.Id==selected)))return Results.BadRequest();
-            if(report.SelectedTab is <=0)return Results.BadRequest();
+            if(report.SelectedTab is <=0||report.ResumeTab is <=0||report.ResumeTab is int resume&&(report.Tabs is null||!report.Tabs.Any(tab=>tab.Id==resume)))return Results.BadRequest();
+            if(report.Volume is <0 or >100||(report.Volume is null)!=(report.Muted is null)||report.Volume is not null&&(!report.Actions.Contains("set-volume")||report.SelectedTab is null))return Results.BadRequest();
             return Results.Ok(new{command=browser.Report(report,auth[7..])});
         });
         instance.MapPost("/api/command", async (HttpContext context) =>

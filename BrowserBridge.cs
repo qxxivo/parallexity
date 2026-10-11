@@ -4,13 +4,13 @@ using System.Text;
 namespace PhoneRemote;
 
 public record BrowserTab(int Id, string Title, string Domain, bool Audible=false);
-public record BrowserState(bool Connected, string Title, string[] Actions, BrowserTab[]? Tabs=null, int? SelectedTab=null);
-public record BrowserReport(string Title, string[] Actions, string? CommandId=null, bool? Success=null,string? Generation=null, BrowserTab[]? Tabs=null, int? SelectedTab=null);
-public record BrowserInstruction(string Id,string Action,string? Generation,int? TabId=null);
-public record BrowserCommandRequest(string Action,int? TabId=null);
+public record BrowserState(bool Connected, string Title, string[] Actions, BrowserTab[]? Tabs=null, int? SelectedTab=null, int? ResumeTab=null, int? Volume=null, bool? Muted=null);
+public record BrowserReport(string Title, string[] Actions, string? CommandId=null, bool? Success=null,string? Generation=null, BrowserTab[]? Tabs=null, int? SelectedTab=null, int? ResumeTab=null, int? Volume=null, bool? Muted=null);
+public record BrowserInstruction(string Id,string Action,string? Generation,int? TabId=null, int? Volume=null);
+public record BrowserCommandRequest(string Action,int? TabId=null, int? Volume=null);
 internal sealed class BrowserBridge
 {
-    internal static readonly string[] AllowedActions={"play","pause","seek-back","seek-forward","skip-intro","skip-ad","next-episode","fullscreen","exit-fullscreen"};
+    internal static readonly string[] AllowedActions={"play","pause","seek-back","seek-forward","skip-intro","skip-ad","next-episode","fullscreen","exit-fullscreen","set-volume","mute-player","unmute-player"};
     internal static readonly string[] TabActions={"select-tab","focus-tab","refresh-tabs","detach-tab"};
     private readonly object sync=new();
     private readonly Func<DateTimeOffset> now;
@@ -19,7 +19,8 @@ internal sealed class BrowserBridge
     private string title="";
     private string[] actions=Array.Empty<string>();
     private BrowserTab[]? tabs;
-    private int? selectedTab;
+    private int? selectedTab,resumeTab,volume;
+    private bool? muted;
     private BrowserInstruction? command;
     private TaskCompletionSource<bool>? completion;
     private readonly string? file;
@@ -46,7 +47,7 @@ internal sealed class BrowserBridge
     }
     private static string Hash(string token)=>Convert.ToHexString(SHA256.HashData(Encoding.UTF8.GetBytes(token)));
     internal bool Authorized(string token) {lock(sync)return token.Length==64&&secretHash is not null&&CryptographicOperations.FixedTimeEquals(Convert.FromHexString(Hash(token)),Convert.FromHexString(secretHash));}
-    internal BrowserState State {get{lock(sync){var connected=secretHash is not null&&now()-lastSeen<TimeSpan.FromSeconds(10);return new(connected,connected?title:"",connected?actions:Array.Empty<string>(),connected?tabs:null,connected?selectedTab:null);}}}
+    internal BrowserState State {get{lock(sync){var connected=secretHash is not null&&now()-lastSeen<TimeSpan.FromSeconds(10);return new(connected,connected?title:"",connected?actions:Array.Empty<string>(),connected?tabs:null,connected?selectedTab:null,connected?resumeTab:null,connected?volume:null,connected?muted:null);}}}
     internal BrowserInstruction? Report(BrowserReport report,string? token=null)
     {
         lock(sync)
@@ -61,13 +62,13 @@ internal sealed class BrowserBridge
                 completion?.TrySetResult(valid);command=null;completion=null;
             }
             if(report.Generation!=generation){completion?.TrySetResult(false);command=null;completion=null;generation=report.Generation;}
-            lastSeen=now();title=report.Title;actions=report.Actions.Distinct().Where(AllowedActions.Contains).ToArray();tabs=report.Tabs;selectedTab=report.SelectedTab;
+            lastSeen=now();title=report.Title;actions=report.Actions.Distinct().Where(AllowedActions.Contains).ToArray();tabs=report.Tabs;selectedTab=report.SelectedTab;resumeTab=report.ResumeTab;volume=report.Volume;muted=report.Muted;
             if(command is not null&&report.CommandId==command.Id){completion?.TrySetResult(report.Success==true);command=null;completion=null;}
             if(command is not null&&now()>commandExpiry){completion?.TrySetResult(false);command=null;completion=null;}
             return command;
         }
     }
-    internal async Task<bool> ExecuteAsync(string action,int? tabId=null)
+    internal async Task<bool> ExecuteAsync(string action,int? tabId=null,int? volume=null)
     {
         Task<bool> task;
         var management=TabActions.Contains(action);
@@ -75,13 +76,16 @@ internal sealed class BrowserBridge
         lock(sync)
         {
             if(!State.Connected||command is not null)return false;
+            var audio=action is "set-volume" or "mute-player" or "unmute-player";
+            if(action=="set-volume" ? volume is null or <0 or >100 : volume is not null)return false;
+            if(audio&&(selectedTab is null||tabId!=selectedTab))return false;
             if(management)
             {
                 if(tabs is null||((action is "select-tab" or "focus-tab")&&!tabs.Any(tab=>tab.Id==tabId))||
                     ((action is "refresh-tabs" or "detach-tab")&&tabId is not null)||(action=="detach-tab"&&selectedTab is null))return false;
             }
-            else if(tabId is not null||!actions.Contains(action))return false;
-            command=new(Guid.NewGuid().ToString("N"),action,generation,tabId);commandExpiry=now()+timeout;
+            else if((!audio&&tabId is not null)||!actions.Contains(action))return false;
+            command=new(Guid.NewGuid().ToString("N"),action,generation,tabId,volume);commandExpiry=now()+timeout;
             completion=new(TaskCreationOptions.RunContinuationsAsynchronously);task=completion.Task;
         }
         try{return await task.WaitAsync(timeout);}

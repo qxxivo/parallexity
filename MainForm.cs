@@ -335,7 +335,7 @@ public sealed class MainForm : Form
         using var dialog=new Form{Text="Подключить браузер",Size=new(550,410),StartPosition=FormStartPosition.CenterParent,BackColor=Background,ForeColor=Color.White,Font=Font,FormBorderStyle=FormBorderStyle.FixedDialog,MaximizeBox=false,MinimizeBox=false};
         dialog.Controls.Add(new Label{Text="1. Нажми «Подготовить расширение»: откроется его папка.\n2. В Chrome / Edge / Яндекс включи режим разработчика\n   chrome://extensions → «Загрузить распакованное».\n3. Открой значок расширения и вставь код ниже.\n4. Нажми «Подключить и разрешить управление».\n\nКод действует 2 минуты. Подключение сохраняется\nпосле перезапуска ПК. Подключение по новому коду заменит старый доступ.",Location=new(18,18),Size=new(510,180)});
         var code=new TextBox{Text=server.CreateBrowserCode(),ReadOnly=true,Location=new(18,206),Width=450,BackColor=Card,ForeColor=Color.White};dialog.Controls.Add(code);
-        var copy=Button("Скопировать код",(_,_)=>Clipboard.SetText(code.Text));copy.Location=new(18,248);dialog.Controls.Add(copy);
+        var copy=Button("Скопировать код",(_,_)=>{code.Text=server.CreateBrowserCode();Clipboard.SetText(code.Text);});copy.Location=new(18,248);dialog.Controls.Add(copy);
         var download=Button("Подготовить расширение",(_,_)=>PrepareBrowserExtension());download.Location=new(250,248);download.Width=255;dialog.Controls.Add(download);
         var disconnect=Button("Отключить браузер",(_,_)=>{server.DisconnectBrowser();dialog.Close();});disconnect.Location=new(18,300);dialog.Controls.Add(disconnect);
         dialog.ShowDialog(this);
