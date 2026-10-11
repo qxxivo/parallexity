@@ -14,15 +14,18 @@ class Element {
   querySelector(key) { if (!this.children.has(key)) this.children.set(key, new Element()); return this.children.get(key); }
   replaceChildren() {} setAttribute() {} append() {} remove() {}
 }
-function harness() {
+function harness(preferences = {}, storageUnavailable = false) {
   const nodes = new Map(), timers = new Map(); let sequence = 0;
   const node = id => { if (!nodes.has(id)) nodes.set(id, new Element()); return nodes.get(id); };
   const document = new Element(); document.hidden = false;
-  document.getElementById = node; document.querySelectorAll = () => []; document.createElement = () => new Element();
+  const panels = ['media-panel','sound-panel','input-panel'].map(id => { const panel = node(id); panel.id = id; return panel; });
+  const tabs = panels.map(panel => { const tab = node('tab-' + panel.id); tab.dataset.panel = panel.id; return tab; });
+  document.getElementById = node; document.querySelectorAll = selector => selector === '.tab' ? tabs : selector === '.tab-panel' ? panels : []; document.createElement = () => new Element();
   const window = new Element(); window.matchMedia = () => ({ matches: false }); window.scrollTo = () => {};
   const location = { hash: '', pathname: '/', origin: 'http://192.168.1.4:8765', assign: url => { location.assigned = url; } };
   const requests = [];
-  const env = { document, window, location, navigator: { userAgent: 'Android' }, history: { replaceState() {} }, URL, URLSearchParams, AbortController, performance, crypto: require('node:crypto').webcrypto,
+  const storage = new Map(Object.entries(preferences));
+  const env = { document, window, location, navigator: { userAgent: 'Android' }, history: { replaceState() {} }, localStorage: { getItem(key) { if(storageUnavailable) throw new Error('Storage blocked'); return storage.get(key) ?? null; }, setItem(key,value) { if(storageUnavailable) throw new Error('Storage blocked'); storage.set(key,value); } }, URL, URLSearchParams, AbortController, performance, crypto: require('node:crypto').webcrypto,
     setTimeout(callback, delay) { const id = ++sequence; timers.set(id, { callback, delay }); return id; }, clearTimeout: id => timers.delete(id), setInterval() {},
     fetch(url, options) {
       requests.push({ url, options });
@@ -32,7 +35,7 @@ function harness() {
         json: async () => ({ computer: 'Test PC', media: [], apps: [], audio: { available: true, volume: 42, muted: false }, inputEnabled: false }) });
     }, mode: 'success' };
   vm.runInNewContext(fs.readFileSync(path.join(__dirname, '../web/app.js'), 'utf8'), env);
-  return { env, node, timers, requests, document, window, location, async tick(delay) {
+  return { env, node, timers, requests, document, window, location, storage, async tick(delay) {
     const entry = [...timers].find(([,timer]) => timer.delay === delay); assert.ok(entry, `Missing timer ${delay}`);
     timers.delete(entry[0]); entry[1].callback(); await settle();
   } };
@@ -71,5 +74,17 @@ async function settle() { for (let i = 0; i < 20; i++) await Promise.resolve(); 
   h.node('home-pair-form').emit('submit', { preventDefault() {} });
   assert.equal(h.location.assigned, '/?connect#pair=test-token');
   assert.ok(h.requests.every(r => r.url === '/api/state'), 'Reconnection never replays control commands');
+  const remembered = harness({'parallexity:panel':'input-panel','parallexity:precise':'1'}); await settle();
+  assert.equal(remembered.node('input-panel').classList.contains('hidden'), false, 'Last selected tab is restored');
+  assert.equal(remembered.node('precise').checked, true, 'Precision preference is restored');
+  remembered.node('tab-sound-panel').emit('click');
+  assert.equal(remembered.storage.get('parallexity:panel'), 'sound-panel');
+  remembered.node('precise').checked = false; remembered.node('precise').emit('change');
+  assert.equal(remembered.storage.get('parallexity:precise'), '0');
+  const invalid = harness({'parallexity:panel':'not-a-panel'}); await settle();
+  assert.equal(invalid.node('remote').classList.contains('hidden'), false, 'Invalid preference cannot break connection');
+  assert.equal(invalid.node('media-panel').classList.contains('hidden'), false, 'Invalid tab falls back to media');
+  const blocked = harness({}, true); await settle();
+  assert.equal(blocked.node('volume').disabled, false, 'Blocked browser storage does not prevent remote use');
   console.log('Passed reconnection, visibility, stale-request, revocation and pairing-link scenarios.');
 })().catch(error => { console.error(error); process.exitCode = 1; });

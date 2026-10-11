@@ -1,6 +1,12 @@
 (() => {
   'use strict';
   const $ = id => document.getElementById(id);
+  function preference(key, value) {
+    try {
+      if (value !== undefined) localStorage.setItem('parallexity:' + key, value);
+      return localStorage.getItem('parallexity:' + key);
+    } catch { return null; }
+  }
   let state = null, selected = '', connected = false, pairing = false, polling = false;
   let editingVolume = false, volumeTimer = null, pendingVolume = null, volumeSending = false;
   let commandPending = false, textSending = false, toastTimer = null;
@@ -132,7 +138,7 @@
     if (!connected || commandPending) return;
     if (await command('display-off')) toast('Команда выключения экрана отправлена.');
   });
-  $('session').addEventListener('change', () => { selected = $('session').value; render(); });
+  $('session').addEventListener('change', () => { selected = $('session').value; preference('player', selected); render(); });
   async function sendVolume() {
     if (volumeSending || pendingVolume === null || !connected) return;
     volumeSending = true;
@@ -190,12 +196,15 @@
       row.mute.textContent = app.muted ? 'Включить звук' : 'Выключить звук'; row.mute.setAttribute('aria-pressed',String(app.muted));
     }
   }
-  document.querySelectorAll('.tab').forEach(button => button.addEventListener('click', () => {
+  function selectPanel(id, remember = true) {
+    if (!['media-panel', 'sound-panel', 'input-panel'].includes(id)) id = 'media-panel';
     cancelGesture();
-    document.querySelectorAll('.tab-panel').forEach(panel => panel.classList.toggle('hidden', panel.id !== button.dataset.panel));
-    document.querySelectorAll('.tab').forEach(tab => { tab.classList.toggle('active',tab === button); tab.setAttribute('aria-pressed',String(tab === button)); });
+    document.querySelectorAll('.tab-panel').forEach(panel => panel.classList.toggle('hidden', panel.id !== id));
+    document.querySelectorAll('.tab').forEach(tab => { const active = tab.dataset.panel === id; tab.classList.toggle('active', active); tab.setAttribute('aria-pressed', String(active)); });
+    if (remember) preference('panel', id);
     window.scrollTo({top:0,behavior:'auto'});
-  }));
+  }
+  document.querySelectorAll('.tab').forEach(button => button.addEventListener('click', () => selectPanel(button.dataset.panel)));
   let inputChain = Promise.resolve(), inputQueued = 0, motionBusy = false, dx = 0, dy = 0, wheel = 0, inputEpoch = 0;
   let drag = null, holdTimer = null, lastDragMotion = 0;
   const pointers = new Map();
@@ -299,7 +308,7 @@
   pad.addEventListener('pointerup',endGesture);
   pad.addEventListener('pointercancel',cancelGesture);
   pad.addEventListener('lostpointercapture',event => { if (pointers.has(event.pointerId)) cancelGesture(); });
-  document.addEventListener('visibilitychange', () => { cancelGesture(); clearTimeout(pollTimer); if (document.hidden) pollAbort?.abort(); else reconnectNow(); });
+  document.addEventListener('visibilitychange', () => { cancelGesture(); clearTimeout(pollTimer); if (document.hidden) { disableControls(); pollAbort?.abort(); } else reconnectNow(); });
   window.addEventListener('blur',cancelGesture);
   window.addEventListener('pagehide', () => { cancelGesture(); clearTimeout(pollTimer); pollAbort?.abort(); });
   window.addEventListener('pageshow', reconnectNow);
@@ -319,5 +328,9 @@
       location.assign('/?connect#pair=' + encodeURIComponent(token));
     } catch { toast('Скопируй новую ссылку из окна parallexity на ПК. Она должна относиться к этому компьютеру.'); }
   });
+  selected = preference('player') || '';
+  $('precise').checked = preference('precise') === '1';
+  $('precise').addEventListener('change', () => preference('precise', $('precise').checked ? '1' : '0'));
+  selectPanel(preference('panel') || 'media-panel', false);
   void poll();
 })();

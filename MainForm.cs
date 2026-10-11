@@ -40,6 +40,8 @@ public sealed class MainForm : Form
     private bool started;
     private volatile bool inputEnabled;
     private readonly bool designPreview;
+    private bool refreshingAddresses;
+    private int networkCheckTicks;
 
     internal MainForm(DesktopInstance instance, bool startInTray = false, bool designPreview = false)
     {
@@ -88,7 +90,7 @@ public sealed class MainForm : Form
         address.AccessibleName = "Адрес подключения";
         address.Width = 270; address.DropDownStyle = ComboBoxStyle.DropDownList;
         address.BackColor = Card; address.ForeColor = Color.White; address.FlatStyle = FlatStyle.Flat;
-        address.SelectedIndexChanged += (_, _) => { if (started) GenerateQr(); }; network.Controls.Add(address);
+        address.SelectedIndexChanged += (_, _) => { if (started && !refreshingAddresses) GenerateQr(); }; network.Controls.Add(address);
         left.Controls.Add(network);
         root.Controls.Add(leftCard, 0, 1);
 
@@ -145,6 +147,7 @@ public sealed class MainForm : Form
         timer.Tick += (_, _) =>
         {
             if (instance.OpenRequested()) Restore();
+            if (started && !stopping && !updating && ++networkCheckTicks % 15 == 0) RefreshAddresses();
             var seconds = Math.Max(0, (int)(expires - DateTimeOffset.UtcNow).TotalSeconds);
             expiry.Text = seconds > 0 ? $"QR-код действует ещё {seconds} сек." : "Срок истёк — нажми «Новый QR-код»";
         };
@@ -183,9 +186,7 @@ public sealed class MainForm : Form
                 try { await server.StartAsync(designPreview ? 0 : port, designPreview); break; }
                 catch (IOException) { await server.DisposeAsync(); if (port == 8775) throw; }
             }
-            var addresses = designPreview ? new[] { $"http://127.0.0.1:{server.Port}" } : server.Addresses.OrderByDescending(a => a.StartsWith("http://192.168.")).ToArray();
-            address.Items.AddRange(addresses.Length > 0 ? addresses : new[] { $"http://127.0.0.1:{server.Port}" });
-            address.SelectedIndex = 0;
+            RefreshAddresses();
             started = true;
             GenerateQr(); timer.Start();
             if (designPreview) File.WriteAllText(Path.Combine(Environment.CurrentDirectory, "test-design-preview.json"), System.Text.Json.JsonSerializer.Serialize(new { url = pairingUrl, fake = true }));
@@ -193,7 +194,9 @@ public sealed class MainForm : Form
             // Run on the UI context and stop when an update begins, so no fresh
             // download is ever removed by a delayed startup cleanup.
             _ = CleanupAfterStartupAsync();
-            status.Text = addresses.Length > 0 ? "Пульт готов. Сканируй QR-код с телефона." : "Нет локальной сети. Подключи ПК к роутеру и перезапусти программу.";
+            status.Text = address.SelectedItem?.ToString()?.StartsWith("http://127.0.0.1:") == true && !designPreview
+                ? "Нет локальной сети. Подключи ПК к роутеру — адрес обновится автоматически."
+                : "Пульт готов. Сканируй QR-код с телефона.";
         }
         catch (Exception)
         {
@@ -201,6 +204,32 @@ public sealed class MainForm : Form
             status.Text = "Не удалось запустить подключение. Закрой другой экземпляр и попробуй снова.";
             refreshQr.Enabled = false;
         }
+    }
+
+    private void RefreshAddresses()
+    {
+        try
+        {
+            var available = designPreview ? new[] { $"http://127.0.0.1:{server.Port}" } : server.Addresses.OrderByDescending(a => a.StartsWith("http://192.168.")).ThenBy(a => a, StringComparer.Ordinal).ToArray();
+            if (available.Length == 0) available = new[] { $"http://127.0.0.1:{server.Port}" };
+            if (address.Items.Cast<string>().SequenceEqual(available)) return;
+            var previous = address.SelectedItem as string;
+            refreshingAddresses = true;
+            try
+            {
+                address.Items.Clear(); address.Items.AddRange(available);
+                address.SelectedIndex = Math.Max(0, Array.IndexOf(available, previous));
+            }
+            finally { refreshingAddresses = false; }
+            if (started && previous != address.SelectedItem as string)
+            {
+                GenerateQr();
+                status.Text = available[0].StartsWith("http://127.0.0.1:") && !designPreview
+                    ? "Нет локальной сети. Ждём подключение к роутеру…"
+                    : "Адрес ПК изменился. Подключи телефон новым QR-кодом.";
+            }
+        }
+        catch (System.Net.NetworkInformation.NetworkInformationException) { /* Retry after the network settles. */ }
     }
 
     private async Task CleanupAfterStartupAsync()
@@ -252,10 +281,11 @@ public sealed class MainForm : Form
 
     private void UpdateDevices()
     {
+        var selectedId = (devices.SelectedItem as TrustedDevice)?.Id;
         devices.Items.Clear(); devices.Items.AddRange(trust.Devices);
         devices.Visible = devices.Items.Count > 0; emptyDevices.Visible = devices.Items.Count == 0;
         disconnectButton.Enabled = devices.Items.Count > 0;
-        if (devices.Items.Count > 0) devices.SelectedIndex = 0;
+        if (devices.Items.Count > 0) devices.SelectedIndex = Math.Max(0, devices.Items.Cast<TrustedDevice>().ToList().FindIndex(d => d.Id == selectedId));
     }
     private void Restore() { Show(); WindowState = FormWindowState.Normal; Activate(); }
     private void Restart()
