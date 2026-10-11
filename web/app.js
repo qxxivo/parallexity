@@ -4,26 +4,32 @@
   let state = null, selected = '', connected = false, pairing = false, polling = false;
   let editingVolume = false, volumeTimer = null, pendingVolume = null, volumeSending = false;
   let commandPending = false, textSending = false, toastTimer = null;
+  let pollTimer = null, pollFailures = 0, pollAbort = null, wakeRequested = false;
   const pairToken = new URLSearchParams(location.hash.slice(1)).get('pair');
   if (pairToken) history.replaceState(null, '', location.pathname);
   $('device-name').value = /iPhone|iPad/.test(navigator.userAgent) ? 'Мой iPhone' : /Android/.test(navigator.userAgent) ? 'Мой Android' : 'Мой телефон';
 
   function paintRange(node) { node.style.setProperty('--fill', node.value + '%'); }
   function toast(text) { $('toast').textContent = text; $('toast').style.display = 'block'; clearTimeout(toastTimer); toastTimer = setTimeout(() => $('toast').style.display = 'none', 5000); }
-  async function api(path, body) {
+  async function api(path, body, signal) {
     const controller = new AbortController();
+    const abort = () => controller.abort();
+    signal?.addEventListener('abort', abort, { once: true });
+    if (signal?.aborted) controller.abort();
     const timer = setTimeout(() => controller.abort(), path === '/api/pair' ? 75000 : 7000);
     try {
       const response = await fetch(path, { method: body === undefined ? 'GET' : 'POST', credentials: 'same-origin', cache: 'no-store', signal: controller.signal,
         headers: body === undefined ? {} : { 'Content-Type': 'application/json' }, body: body === undefined ? undefined : JSON.stringify(body) });
       if (!response.ok) { const data = await response.json().catch(() => ({})); const error = new Error(data.error || 'Не удалось связаться с ПК.'); error.status = response.status; throw error; }
       return await response.json();
-    } finally { clearTimeout(timer); }
+    } finally { clearTimeout(timer); signal?.removeEventListener('abort', abort); }
   }
   function setConnection(ok, text) {
     connected = ok; $('connection').classList.toggle('online', ok); $('connection').querySelector('b').textContent = text;
   }
   function disableControls() {
+    pendingVolume = null; editingVolume = false; clearTimeout(volumeTimer);
+    for (const row of mixerRows.values()) { row.pending = null; row.editing = false; clearTimeout(row.timer); }
     ['volume', 'mute', 'previous', 'play', 'next', 'session', 'send-text'].forEach(id => $(id).disabled = true);
     document.querySelectorAll('#app-mixer button,#app-mixer input,[data-input],[data-key],[data-scroll]').forEach(node => node.disabled = true);
     $('touchpad').classList.add('disabled');
@@ -71,20 +77,37 @@
   }
   async function poll() {
     if (polling || pairing || document.hidden) return;
+    clearTimeout(pollTimer);
+    pollAbort = new AbortController();
     polling = true;
     try {
-      state = await api('/api/state');
+      state = await api('/api/state', undefined, pollAbort.signal);
+      pollFailures = 0;
       setConnection(true, 'Подключено');
       $('pairing').classList.add('hidden'); $('unpaired').classList.add('hidden'); $('remote').classList.remove('hidden'); $('reconnect').classList.add('hidden');
       render();
     } catch (error) {
+      if (pollAbort.signal.aborted) return;
+      pollFailures++;
       setConnection(false, error.status === 401 ? 'Нужно подключение' : 'Нет связи'); disableControls();
       if (error.status === 401) {
+        $('reconnect').classList.add('hidden');
         $('remote').classList.add('hidden');
         $(pairToken ? 'pairing' : 'unpaired').classList.remove('hidden');
-      } else if (state) { $('reconnect').classList.remove('hidden'); }
-      else { $('unpaired').classList.remove('hidden'); }
-    } finally { polling = false; }
+      } else {
+        $('pairing').classList.add('hidden'); $('unpaired').classList.add('hidden');
+        $('reconnect').classList.remove('hidden');
+      }
+    } finally {
+      polling = false; pollAbort = null;
+      if (!document.hidden) pollTimer = setTimeout(poll, wakeRequested ? 0 : Math.min(15000, 1500 * 2 ** Math.min(pollFailures, 4)));
+      wakeRequested = false;
+    }
+  }
+  function reconnectNow() {
+    pollFailures = 0; clearTimeout(pollTimer);
+    if (polling) { wakeRequested = true; pollAbort?.abort(); }
+    else void poll();
   }
   $('pair-form').addEventListener('submit', async event => {
     event.preventDefault(); if (pairing || !pairToken) return;
@@ -124,7 +147,7 @@
   $('volume').addEventListener('change', finishVolume);
   $('volume').addEventListener('pointercancel', finishVolume);
   $('volume').addEventListener('blur', finishVolume);
-  $('retry').addEventListener('click', poll); $('reconnect-button').addEventListener('click', poll);
+  $('retry').addEventListener('click', reconnectNow); $('reconnect-button').addEventListener('click', reconnectNow);
   const mixerRows = new Map();
   function renderMixer() {
     const apps = state.apps || [];
@@ -271,9 +294,25 @@
   pad.addEventListener('pointerup',endGesture);
   pad.addEventListener('pointercancel',cancelGesture);
   pad.addEventListener('lostpointercapture',event => { if (pointers.has(event.pointerId)) cancelGesture(); });
-  document.addEventListener('visibilitychange', () => { cancelGesture(); if (!document.hidden) void poll(); });
+  document.addEventListener('visibilitychange', () => { cancelGesture(); clearTimeout(pollTimer); if (document.hidden) pollAbort?.abort(); else reconnectNow(); });
   window.addEventListener('blur',cancelGesture);
-  window.addEventListener('pagehide',cancelGesture);
-  window.addEventListener('online', poll);
-  setInterval(poll, 1500); void poll();
+  window.addEventListener('pagehide', () => { cancelGesture(); clearTimeout(pollTimer); pollAbort?.abort(); });
+  window.addEventListener('pageshow', reconnectNow);
+  window.addEventListener('focus', reconnectNow);
+  window.addEventListener('online', reconnectNow);
+  window.addEventListener('offline', () => { setConnection(false, 'Нет сети'); disableControls(); pollAbort?.abort(); $('reconnect').classList.remove('hidden'); });
+  if (navigator.standalone || window.matchMedia('(display-mode: standalone)').matches) $('home-screen').classList.add('hidden');
+  else $('home-instructions').textContent = /iPhone|iPad/.test(navigator.userAgent)
+    ? 'В Safari открой «Поделиться» → «На экран Домой». Если есть переключатель «Открывать как веб-приложение», включи его. В отдельном окне может понадобиться подключить телефон заново: открой новый QR-код на ПК и вставь ссылку ниже.'
+    : 'В меню браузера выбери «Добавить на главный экран» или «Установить приложение», если этот пункт доступен. В локальной сети браузер может создать обычный ярлык. Сохраняй пульт после подключения телефона. Если адрес ПК изменится, добавь ярлык заново.';
+  $('home-pair-form').addEventListener('submit', event => {
+    event.preventDefault();
+    try {
+      const url = new URL($('home-pair-link').value);
+      const token = new URLSearchParams(url.hash.slice(1)).get('pair');
+      if (url.origin !== location.origin || url.pathname !== '/' || !token || token.length > 64) throw new Error();
+      location.assign('/?connect#pair=' + encodeURIComponent(token));
+    } catch { toast('Скопируй новую ссылку из окна parallexity на ПК. Она должна относиться к этому компьютеру.'); }
+  });
+  void poll();
 })();

@@ -53,4 +53,15 @@ for ($n=0; $n -lt $sizes.Count; $n++) {
     $offset += $images[$n].Length
 }
 foreach ($bytes in $images) { $writer.Write([byte[]]$bytes) }
-$writer.Dispose(); $path.Dispose(); $tile.Dispose(); $background.Dispose(); $white.Dispose()
+$writer.Dispose()
+foreach ($size in @(180,192,512)) {
+    $bitmap = [Drawing.Bitmap]::new($size,$size)
+    $graphics = [Drawing.Graphics]::FromImage($bitmap)
+    $graphics.SmoothingMode = [Drawing.Drawing2D.SmoothingMode]::AntiAlias
+    $graphics.Clear([Drawing.ColorTranslator]::FromHtml('#222226'))
+    $graphics.ScaleTransform($size/100,$size/100)
+    $graphics.TranslateTransform(0,5); $graphics.FillPath($white,$path)
+    $bitmap.Save((Join-Path $root "web\icon-$size.png"),[Drawing.Imaging.ImageFormat]::Png)
+    $graphics.Dispose(); $bitmap.Dispose()
+}
+$path.Dispose(); $tile.Dispose(); $background.Dispose(); $white.Dispose()

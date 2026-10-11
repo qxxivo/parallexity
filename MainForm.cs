@@ -29,8 +29,9 @@ public sealed class MainForm : Form
     private bool started;
     private volatile bool inputEnabled;
 
-    public MainForm()
+    internal MainForm(DesktopInstance instance, bool startInTray = false)
     {
+        if (startInTray) { WindowState = FormWindowState.Minimized; ShowInTaskbar = false; }
         Text = $"parallexity {AppUpdates.CurrentVersion.ToString(3)} · пульт для твоего ПК";
         Size = new(820, 760);
         MinimumSize = new(800, 720);
@@ -85,6 +86,20 @@ public sealed class MainForm : Form
         updateButton.BackColor = Color.FromArgb(243, 243, 245);
         updateButton.ForeColor = Color.FromArgb(24, 24, 27);
         right.Controls.Add(updateButton);
+        var startupToggle = new CheckBox { Text = "Запускать с Windows в трей", Width = 280, Height = 36, ForeColor = Color.White };
+        try { startupToggle.Checked = DesktopStartup.Enabled; } catch { startupToggle.Enabled = false; }
+        var changingStartup = false;
+        startupToggle.CheckedChanged += (_, _) =>
+        {
+            if (changingStartup) return;
+            try { DesktopStartup.Enabled = startupToggle.Checked; }
+            catch (Exception)
+            {
+                changingStartup = true; startupToggle.Checked = !startupToggle.Checked; changingStartup = false;
+                MessageBox.Show(this, "Не удалось изменить автозапуск. Попробуй ещё раз.", "parallexity", MessageBoxButtons.OK, MessageBoxIcon.Information);
+            }
+        };
+        right.Controls.Add(startupToggle);
         var inputToggle = new CheckBox { Text = "Разрешить мышь и клавиатуру", Width = 280, Height = 45, ForeColor = Color.White, Margin = new(0, 8, 0, 4) };
         inputToggle.CheckedChanged += (_, _) => inputEnabled = inputToggle.Checked;
         right.Controls.Add(inputToggle);
@@ -109,10 +124,16 @@ public sealed class MainForm : Form
         Resize += (_, _) => { if (WindowState == FormWindowState.Minimized) Hide(); };
         timer.Tick += (_, _) =>
         {
+            if (instance.OpenRequested()) Restore();
             var seconds = Math.Max(0, (int)(expires - DateTimeOffset.UtcNow).TotalSeconds);
             expiry.Text = seconds > 0 ? $"QR-код действует ещё {seconds} сек." : "Срок истёк — нажми «Новый QR-код»";
         };
-        Shown += async (_, _) => await StartAsync();
+        Shown += async (_, _) =>
+        {
+            if (startInTray) { Hide(); WindowState = FormWindowState.Normal; ShowInTaskbar = true; }
+            timer.Start();
+            await StartAsync();
+        };
         FormClosing += async (_, e) =>
         {
             if (!exitRequested && e.CloseReason == CloseReason.UserClosing) { e.Cancel = true; Hide(); return; }
@@ -126,7 +147,7 @@ public sealed class MainForm : Form
             tray.Dispose(); timer.Dispose(); qr.Image?.Dispose();
             if (restartRequested)
             {
-                try { Process.Start(new ProcessStartInfo(AppUpdates.LaunchPath) { UseShellExecute = true }); }
+                try { Process.Start(new ProcessStartInfo(AppUpdates.LaunchPath) { UseShellExecute = true, Arguments = "--restart" }); }
                 catch (Exception error) { MessageBox.Show("Открой parallexity.exe вручную.\n\n" + error.Message, "Не удалось перезапустить пульт", MessageBoxButtons.OK, MessageBoxIcon.Error); }
             }
         };

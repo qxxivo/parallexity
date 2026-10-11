@@ -84,6 +84,24 @@ internal static class SelfTest
                 try { AppUpdates.ParseRelease(json); throw new Exception("Accepted invalid release: " + name); }
                 catch (InvalidDataException) { Check(true, name); }
             }
+            var instanceName = "test-" + Guid.NewGuid().ToString("N");
+            using (var owner = new DesktopInstance(instanceName))
+            {
+                Check(owner.Acquire(0), "First desktop instance acquires exclusive ownership");
+                var rejected = false;
+                var duplicate = new Thread(() =>
+                {
+                    using var second = new DesktopInstance(instanceName);
+                    rejected = !second.Acquire(0);
+                    second.RequestOpen();
+                });
+                duplicate.Start(); duplicate.Join();
+                Check(rejected && owner.OpenRequested() && !owner.OpenRequested(), "Second instance signals existing window without taking ownership");
+            }
+            using (var restarted = new DesktopInstance(instanceName))
+                Check(restarted.Acquire(0), "Closing previous instance allows restart");
+            var startupPath = Path.Combine(folder, "folder with spaces", "parallexity.exe");
+            Check(DesktopStartup.Command(startupPath) == "\"" + Path.GetFullPath(startupPath) + "\" --startup", "Autostart quotes executable path and uses tray flag");
             Check(AppUpdates.ParseRelease(ReleaseJson()).Version == new Version(0, 3, 0), "Stable update metadata is parsed");
             RejectRelease(ReleaseJson(tag: "not-a-version"), "Invalid release version rejected");
             RejectRelease(ReleaseJson(prerelease: true), "Preview release rejected");
@@ -127,6 +145,18 @@ internal static class SelfTest
             AppUpdates.CleanOldDownloads(folder, successfulStartup: true);
             Check(!File.Exists(installFile + ".previous") && File.Exists(installFile) && File.ReadAllText(dataFile) == "pairing fixture" && File.Exists(Path.Combine(unrelated, "parallexity.exe")), "Healthy startup discards rollback and preserves app, devices and unrelated folders");
             var home = await client.GetAsync("/");
+            using (var manifestResponse = await client.GetAsync("/manifest.webmanifest"))
+            {
+                using var manifest = JsonDocument.Parse(await manifestResponse.Content.ReadAsStringAsync());
+                Check(manifestResponse.Content.Headers.ContentType?.MediaType == "application/manifest+json" && manifest.RootElement.GetProperty("display").GetString() == "standalone" && manifest.RootElement.GetProperty("start_url").GetString() == "/", "Home screen manifest opens clean root URL without pairing token");
+            }
+            foreach (var iconSize in new[] { 180, 192, 512 })
+            {
+                using var iconResponse = await client.GetAsync($"/icon-{iconSize}.png");
+                using var png = new MemoryStream(await iconResponse.Content.ReadAsByteArrayAsync());
+                using var bitmap = new System.Drawing.Bitmap(png);
+                Check(iconResponse.Content.Headers.ContentType?.MediaType == "image/png" && bitmap.Width == iconSize && bitmap.Height == iconSize, $"Home screen PNG icon {iconSize} has correct dimensions");
+            }
             using (var iconStream = typeof(MainForm).Assembly.GetManifestResourceStream("PhoneRemote.assets.parallexity.ico")!)
             using (var icon = new System.Drawing.Icon(iconStream))
                 Check(icon.Width > 0 && icon.Height > 0, "Embedded Windows logo can be loaded as an icon");

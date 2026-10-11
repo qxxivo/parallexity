@@ -3,6 +3,8 @@
 <head>
   <meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
   <meta name="theme-color" content="#121215"><meta name="color-scheme" content="dark">
+  <meta name="apple-mobile-web-app-capable" content="yes"><meta name="apple-mobile-web-app-title" content="parallexity"><meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+  <link rel="manifest" href="/manifest.webmanifest"><link rel="apple-touch-icon" href="/icon-180.png">
   <title>parallexity</title><link rel="icon" href="/icon.svg"><link rel="stylesheet" href="/app.css"><script src="/app.js" defer></script>
 </head>
 <body>
@@ -18,7 +20,7 @@
   <main>
     <header><a class="brand" href="/" aria-label="parallexity — главная"><img src="/icon.svg" alt="" width="34" height="34"><span>parallexity<span class="brand-dot">.</span></span></a><div id="connection" class="connection" role="status"><span></span><b>Подключаемся</b></div></header>
     <section id="pairing" class="card hidden"><span class="eyebrow">ДОБРО ПОЖАЛОВАТЬ</span><h1>Телефон становится пультом.</h1><p>Назови устройство и подтверди подключение в окне parallexity на компьютере.</p><form id="pair-form"><label for="device-name">Имя телефона</label><input id="device-name" maxlength="40" autocomplete="off" value="Мой телефон" required><button id="pair-button" class="primary" type="submit">Подключить к ПК <span>↗</span></button></form><p id="pair-message" role="status" aria-live="polite"></p></section>
-    <section id="unpaired" class="card hidden"><span class="eyebrow">НАЧНИ С КОМПЬЮТЕРА</span><h1>Твой ПК.<br>Под рукой.</h1><p>Открой parallexity на ПК и отсканируй QR-код камерой телефона.</p><button id="retry" class="primary">Проверить подключение</button></section>
+    <section id="unpaired" class="card hidden"><span class="eyebrow">НАЧНИ С КОМПЬЮТЕРА</span><h1>Твой ПК.<br>Под рукой.</h1><p>Открой parallexity на ПК и отсканируй QR-код камерой телефона.</p><button id="retry" class="primary">Проверить подключение</button><details class="keyboard-card pair-link"><summary><span>Подключиться по ссылке</span><span class="summary-plus">+</span></summary><p class="hint">Если отдельное окно попросило подключение, создай новый QR-код на ПК и скопируй ссылку сюда.</p><form id="home-pair-form"><label for="home-pair-link">Ссылка из окна parallexity</label><input id="home-pair-link" type="url" autocomplete="off" required placeholder="http://…/#pair=…"><button type="submit" class="secondary">Подключить телефон</button></form></details></section>
     <div id="remote" class="hidden">
       <div id="media-panel" class="tab-panel">
         <div class="page-heading"><span class="eyebrow">ТВОЙ ПУЛЬТ</span><h1>Медиа<span class="heading-dot">.</span></h1><p>Плейлист на ПК. Управление здесь.</p></div>
@@ -38,9 +40,10 @@
         </section>
         <details class="card keyboard-card"><summary><span>Клавиши и текст</span><span class="summary-plus">+</span></summary><div class="key-grid"><button class="secondary" data-key="escape">Esc</button><button class="secondary" data-key="tab">Tab</button><button class="secondary" data-key="enter">Enter</button><button class="secondary" data-key="backspace" aria-label="Удалить символ">⌫</button><button class="secondary" data-key="left" aria-label="Стрелка влево">←</button><button class="secondary" data-key="up" aria-label="Стрелка вверх">↑</button><button class="secondary" data-key="down" aria-label="Стрелка вниз">↓</button><button class="secondary" data-key="right" aria-label="Стрелка вправо">→</button></div><div class="mouse-buttons"><button class="secondary" data-input="double-click">Двойной клик</button><button class="secondary" data-scroll="120">Прокрутить ↑</button><button class="secondary" data-scroll="-120">Прокрутить ↓</button></div><label for="remote-text" class="text-label">Текст для компьютера</label><textarea id="remote-text" maxlength="500" placeholder="Сначала выбери поле на ПК…" rows="3"></textarea><button id="send-text" class="primary">Ввести на ПК <span>↗</span></button><div class="mouse-buttons shortcuts"><button class="secondary" data-key="select-all">Выделить</button><button class="secondary" data-key="copy">Копировать</button><button class="secondary" data-key="paste">Вставить</button><button class="secondary" data-key="undo">Отменить</button></div><p class="hint">Ввод в активное окно ПК. Перенос строки нажимает Enter.</p></details>
       </div>
-      <section id="reconnect" class="card compact hidden"><h2>Возвращаем соединение</h2><p>Проверь, что ПК включён и пульт запущен.</p><button id="reconnect-button" class="secondary">Попробовать сейчас</button></section>
       <nav class="tabs" aria-label="Разделы пульта"><button class="tab active" data-panel="media-panel" aria-pressed="true"><svg aria-hidden="true"><use href="#i-music"/></svg><span>Медиа</span></button><button class="tab" data-panel="sound-panel" aria-pressed="false"><svg aria-hidden="true"><use href="#i-sound"/></svg><span>Звук</span></button><button class="tab" data-panel="input-panel" aria-pressed="false"><svg aria-hidden="true"><use href="#i-cursor"/></svg><span>Управление</span></button></nav>
     </div>
+    <section id="reconnect" class="card compact hidden" role="status"><h2>Возвращаем соединение</h2><p>Проверь, что ПК включён и телефон в той же Wi-Fi сети. Пульт переподключится автоматически.</p><button id="reconnect-button" class="secondary">Попробовать сейчас</button></section>
+    <details id="home-screen" class="card keyboard-card"><summary><span>Пульт на главном экране</span><span class="summary-plus">+</span></summary><p id="home-instructions" class="hint"></p></details>
     <div id="toast" role="status" aria-live="polite"></div><footer><span class="local-dot"></span><span>В твоей домашней сети</span><span id="computer"></span></footer>
   </main>
 </body>

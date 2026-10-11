@@ -19,7 +19,16 @@ internal static class Program
         ApplicationConfiguration.Initialize();
         Application.SetUnhandledExceptionMode(UnhandledExceptionMode.CatchException);
         Application.ThreadException += (_, e) => ShowError(e.Exception);
-        try { Application.Run(new MainForm()); }
+        try
+        {
+            using var instance = new DesktopInstance();
+            if (!instance.Acquire(args.Contains("--restart") ? 3000 : 0))
+            {
+                if (!args.Contains("--startup")) instance.RequestOpen();
+                return;
+            }
+            Application.Run(new MainForm(instance, args.Contains("--startup")));
+        }
         catch (Exception e) { ShowError(e); }
     }
 

@@ -85,6 +85,12 @@ public sealed class RemoteServer : IAsyncDisposable
         instance.MapGet("/app.css", () => Asset("app.css", "text/css; charset=utf-8"));
         instance.MapGet("/app.js", () => Asset("app.js", "text/javascript; charset=utf-8"));
         instance.MapGet("/icon.svg", () => Asset("icon.svg", "image/svg+xml"));
+        instance.MapGet("/manifest.webmanifest", () => Asset("manifest.webmanifest", "application/manifest+json"));
+        foreach (var size in new[] { 180, 192, 512 })
+        {
+            var name = $"icon-{size}.png";
+            instance.MapGet("/" + name, () => Asset(name, "image/png"));
+        }
         instance.MapPost("/api/pair", async (HttpContext context) =>
         {
             var address = context.Connection.RemoteIpAddress?.ToString() ?? "unknown";
