@@ -30,7 +30,7 @@
   function disableControls() {
     pendingVolume = null; editingVolume = false; clearTimeout(volumeTimer);
     for (const row of mixerRows.values()) { row.pending = null; row.editing = false; clearTimeout(row.timer); }
-    ['volume', 'mute', 'previous', 'play', 'next', 'session', 'send-text'].forEach(id => $(id).disabled = true);
+    ['volume', 'mute', 'previous', 'play', 'next', 'session', 'send-text', 'display-off'].forEach(id => $(id).disabled = true);
     document.querySelectorAll('#app-mixer button,#app-mixer input,[data-input],[data-key],[data-scroll]').forEach(node => node.disabled = true);
     $('touchpad').classList.add('disabled');
     cancelGesture();
@@ -38,6 +38,7 @@
   function render() {
     if (!state) return;
     $('computer').textContent = state.computer;
+    $('display-off').disabled = !connected || commandPending;
     const media = state.media || [];
     if (!media.some(m => m.id === selected)) selected = media[0]?.id || '';
     const optionKey = media.map(m => m.id + ':' + m.app).join('|');
@@ -119,14 +120,18 @@
   async function command(action, extra = {}) {
     if (!connected || commandPending) return;
     commandPending = true; render();
-    try { await api('/api/command', { action, session: selected, ...extra }); }
-    catch (error) { toast(error.message); }
+    try { await api('/api/command', { action, session: selected, ...extra }); return true; }
+    catch (error) { toast(error.message); return false; }
     finally { commandPending = false; await poll(); render(); }
   }
   $('play').addEventListener('click', () => command(state.media.find(m => m.id === selected)?.playing ? 'pause' : 'play'));
   $('next').addEventListener('click', () => command('next'));
   $('previous').addEventListener('click', () => command('previous'));
   $('mute').addEventListener('click', () => command('mute'));
+  $('display-off').addEventListener('click', async () => {
+    if (!connected || commandPending) return;
+    if (await command('display-off')) toast('Команда выключения экрана отправлена.');
+  });
   $('session').addEventListener('change', () => { selected = $('session').value; render(); });
   async function sendVolume() {
     if (volumeSending || pendingVolume === null || !connected) return;

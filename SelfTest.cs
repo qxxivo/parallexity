@@ -191,6 +191,7 @@ internal static class SelfTest
             Check(home.Headers.Contains("Content-Security-Policy"), "Page has CSP and does not allow external scripts");
             Check((await client.GetAsync("/api/state")).StatusCode == HttpStatusCode.Unauthorized, "Unpaired client cannot read PC state");
             Check((await Post("/api/command", new { action = "mute" })).StatusCode == HttpStatusCode.Unauthorized && fake.Commands == 0, "Unpaired client cannot control PC");
+            Check((await Post("/api/command", new { action = "display-off" })).StatusCode == HttpStatusCode.Unauthorized && fake.Commands == 0, "Unpaired client cannot turn off display");
             var token = trust.CreatePairingToken();
             Check((await Post("/api/pair", new { token, name = "Phone" }, "https://attacker.invalid")).StatusCode == HttpStatusCode.Forbidden, "Foreign origin cannot pair");
             using (var request = new HttpRequestMessage(HttpMethod.Get, "/api/state"))
@@ -206,6 +207,8 @@ internal static class SelfTest
             Check((await Post("/api/pair", new { token, name = "Phone" })).StatusCode == HttpStatusCode.Forbidden, "Pairing token cannot be replayed");
             Check((await client.GetAsync("/api/state")).IsSuccessStatusCode, "Same-origin GET works without Origin header");
             var before = fake.Commands;
+            Check((await Post("/api/command", new { action = "display-off" }, "https://attacker.invalid")).StatusCode == HttpStatusCode.Forbidden && fake.Commands == before, "Foreign origin cannot turn off display");
+            Check((await Post("/api/command", new { action = "sleep" })).StatusCode == HttpStatusCode.BadRequest && fake.Commands == before, "Sleep command is not exposed as display power");
             Check((await Post("/api/command", new { action = "volume", volume = 101 })).StatusCode == HttpStatusCode.BadRequest && fake.Commands == before, "Out-of-range volume cannot reach backend");
             Check((await Post("/api/command", new { action = "volume" })).StatusCode == HttpStatusCode.BadRequest && fake.Commands == before, "Missing volume cannot reach backend");
             Check((await Post("/api/command", new { action = "execute", path = "cmd.exe" })).StatusCode == HttpStatusCode.BadRequest && fake.Commands == before, "Arbitrary program execution is not exposed");
@@ -214,6 +217,7 @@ internal static class SelfTest
             var state = await client.GetFromJsonAsync<RemoteState>("/api/state");
             Check(state?.Audio.Volume == 73, "Subsequent state reflects command");
             Check((await Post("/api/command", new { action = "pause", session = "demo-music" })).IsSuccessStatusCode, "Media control reaches selected session");
+            Check((await Post("/api/command", new { action = "display-off" })).IsSuccessStatusCode && fake.LastCommand?.Action == "display-off" && !inputEnabled, "Trusted phone can turn off display without enabling keyboard or mouse (fake backend)");
             before = fake.Commands;
             Check((await Post("/api/command", new { action = "pointer", dx = 5, dy = 2 })).StatusCode == HttpStatusCode.Forbidden && fake.Commands == before, "Trusted device cannot move mouse without host opt-in");
             inputEnabled = true;

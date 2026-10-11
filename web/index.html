@@ -9,6 +9,7 @@
 </head>
 <body>
   <svg class="symbols" aria-hidden="true" xmlns="http://www.w3.org/2000/svg"><defs>
+    <symbol id="i-monitor" viewBox="0 0 24 24"><rect class="stroke" x="3" y="4" width="18" height="13" rx="2"/><path class="stroke" d="M12 17v4m-4 0h8"/></symbol>
     <symbol id="i-play" viewBox="0 0 24 24"><path d="m9 5 11 7-11 7z"/></symbol>
     <symbol id="i-pause" viewBox="0 0 24 24"><path d="M8 5h3v14H8zm7 0h3v14h-3z"/></symbol>
     <symbol id="i-next" viewBox="0 0 24 24"><path d="m5 5 10 7-10 7zM17 5h2v14h-2z"/></symbol>
@@ -25,14 +26,14 @@
       <div id="media-panel" class="tab-panel">
         <div class="page-heading"><span class="eyebrow">ТВОЙ ПУЛЬТ</span><h1>Медиа<span class="heading-dot">.</span></h1><p>Плейлист на ПК. Управление здесь.</p></div>
         <section class="card media-card"><div class="section-heading"><span class="eyebrow">СЕЙЧАС ИГРАЕТ</span><span id="media-app" class="tag">Медиа</span></div><label class="sr-only" for="session">Выбрать плеер</label><select id="session" aria-label="Выбрать плеер"></select>
-          <div class="artwork" aria-hidden="true"><div class="record"><div class="record-center"><svg><use href="#i-music"/></svg></div></div><span class="artwork-mark">P / 01</span></div>
-          <div class="track-copy"><h2 id="title">Открой музыку или видео</h2><p id="artist">Плееры появятся автоматически</p></div>
+          <div class="now-playing"><div class="music-tile" aria-hidden="true"><svg><use href="#i-music"/></svg></div><div class="track-copy"><h2 id="title">Открой музыку или видео</h2><p id="artist">Плееры появятся автоматически</p></div></div>
           <div class="transport"><button id="previous" aria-label="Предыдущий трек" class="round secondary"><svg><use href="#i-previous"/></svg></button><button id="play" aria-label="Воспроизвести" class="round play"><svg><use href="#i-play"/></svg></button><button id="next" aria-label="Следующий трек" class="round secondary"><svg><use href="#i-next"/></svg></button></div><p id="media-note" class="hint">Управление доступными плеерами Windows.</p>
         </section>
         <section class="card volume-card"><div class="section-heading"><span class="eyebrow">ГРОМКОСТЬ ПК</span><strong id="volume-number">—</strong></div><label class="sr-only" for="volume">Громкость компьютера</label><input id="volume" type="range" min="0" max="100" value="0" aria-label="Громкость компьютера"><div class="volume-bottom"><button id="mute" class="secondary"><svg><use href="#i-sound"/></svg><span>Выключить звук</span></button><span id="audio-note" class="hint">Общий звук ПК</span></div></section>
       </div>
       <div id="sound-panel" class="tab-panel hidden"><div class="page-heading"><span class="eyebrow">ВСЁ В БАЛАНСЕ</span><h1>Звук<span class="heading-dot">.</span></h1><p>Музыку погромче. Остальное потише.</p></div><section class="card mixer-card"><div class="section-heading"><span class="eyebrow">ПРИЛОЖЕНИЯ</span><span class="tag neutral">Микшер</span></div><div id="app-mixer"></div><p id="mixer-empty" class="empty-state">Открой музыку или видео на ПК.<br>Приложения со звуком появятся здесь.</p></section></div>
       <div id="input-panel" class="tab-panel hidden"><div class="page-heading"><span class="eyebrow">БЛИЖЕ К КОМПЬЮТЕРУ</span><h1>Управление<span class="heading-dot">.</span></h1><p>Твой телефон — мышь и клавиатура.</p></div>
+<section class="card display-card"><button id="display-off" class="primary"><svg aria-hidden="true"><use href="#i-monitor"/></svg><span>Погасить экран</span><span aria-hidden="true">☾</span></button><p class="hint">ПК и будильник продолжат работать.<br>Экран включится от мыши или клавиши.</p></section>
         <section class="card pad-card"><div class="section-heading"><span class="eyebrow">ТАЧПАД</span><span id="input-status" class="tag">Выключено</span></div><p id="input-note" class="hint">Разреши мышь и клавиатуру в окне программы на ПК.</p>
           <div id="touchpad" class="touchpad" role="application" aria-label="Тачпад: касание — клик, удержание — перетаскивание, два пальца — прокрутка"><svg aria-hidden="true"><use href="#i-cursor"/></svg><span id="pad-label">Двигай пальцем</span><small id="pad-hint">Зажми и двигай — перетаскивание</small><span class="pad-corner top-left"></span><span class="pad-corner bottom-right"></span></div>
           <div class="mouse-buttons clicks"><button data-input="click" class="secondary">Левый клик</button><button data-input="right-click" class="secondary">Правый клик</button></div>

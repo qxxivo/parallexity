@@ -70,6 +70,7 @@ public sealed class DesktopControls : IDesktopControls
 
     public async Task<bool> ExecuteAsync(RemoteCommand command)
     {
+        if (command.Action == "display-off") return await Task.Run(DisplayPower.TurnOff);
         if (command.Action == "volume") return NativeAudio.SetVolume(command.Volume!.Value);
         if (command.Action == "mute") return NativeAudio.ToggleMute();
         if (command.Action == "app-volume") return AudioMixer.Change(command.App!, command.Volume);

@@ -15,7 +15,7 @@ internal static class CommandValidation
     public static bool IsInput(string action) => action is "pointer" or "click" or "right-click" or "double-click" or "scroll" or "key" or "text" or "drag-start" or "drag-move" or "drag-end";
     public static string? Error(RemoteCommand command)
     {
-        if (command.Action is not ("volume" or "mute" or "play" or "pause" or "next" or "previous" or "app-volume" or "app-mute") && !IsInput(command.Action)) return "Неизвестная команда.";
+        if (command.Action is not ("display-off" or "volume" or "mute" or "play" or "pause" or "next" or "previous" or "app-volume" or "app-mute") && !IsInput(command.Action)) return "Неизвестная команда.";
         if (command.Action is "volume" or "app-volume" && (command.Volume is null || command.Volume < 0 || command.Volume > 100)) return "Громкость должна быть от 0 до 100.";
         if (command.Action is "play" or "pause" or "next" or "previous" && (string.IsNullOrEmpty(command.Session) || command.Session.Length > 100)) return "Выбери плеер.";
         if (command.Action is "app-volume" or "app-mute" && (string.IsNullOrEmpty(command.App) || command.App.Length > 100)) return "Выбери приложение.";

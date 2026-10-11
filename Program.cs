@@ -21,13 +21,14 @@ internal static class Program
         Application.ThreadException += (_, e) => ShowError(e.Exception);
         try
         {
-            using var instance = new DesktopInstance();
+            var designPreview = args.Contains("--design-preview");
+            using var instance = new DesktopInstance(designPreview ? "preview-" + Guid.NewGuid().ToString("N") : null);
             if (!instance.Acquire(args.Contains("--restart") ? 3000 : 0))
             {
                 if (!args.Contains("--startup")) instance.RequestOpen();
                 return;
             }
-            Application.Run(new MainForm(instance, args.Contains("--startup")));
+            Application.Run(new MainForm(instance, args.Contains("--startup"), designPreview));
         }
         catch (Exception e) { ShowError(e); }
     }
