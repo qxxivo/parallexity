@@ -30,6 +30,7 @@ public sealed class RemoteServer : IAsyncDisposable
     public bool ViewingEnabled => viewing.Enabled;
     public bool SetViewingMode(bool enabled) => viewing.Set(enabled);
     internal string CreateBrowserCode()=>browser.CreateCode(Port);
+    internal BrowserBridge BrowserForTests=>browser;
     internal void DisconnectBrowser()=>browser.Disconnect();
     public int Port { get; private set; }
     public string[] Addresses => NetworkAddresses().Select(ip => $"http://{ip}:{Port}").ToArray();
@@ -88,6 +89,8 @@ public sealed class RemoteServer : IAsyncDisposable
             }
             if(context.Request.Path.StartsWithSegments("/browser"))
             {
+                var limit=context.Features.Get<Microsoft.AspNetCore.Http.Features.IHttpMaxRequestBodySizeFeature>();
+                if(limit is {IsReadOnly:false})limit.MaxRequestBodySize=131072;
                 var origin=context.Request.Headers.Origin.ToString();
                 if(!IPAddress.IsLoopback(context.Connection.RemoteIpAddress??IPAddress.Any)||host.Host is not ("127.0.0.1" or "localhost")||
                     !System.Text.RegularExpressions.Regex.IsMatch(origin,@"^chrome-extension://[a-p]{32}$")) {context.Response.StatusCode=403;return;}
@@ -157,9 +160,9 @@ public sealed class RemoteServer : IAsyncDisposable
         instance.MapPost("/api/browser",async(HttpContext context)=>
         {
             if(!trust.IsTrusted(context.Request.Cookies["pr_session"]))return Results.Unauthorized();
-            var request=await context.Request.ReadFromJsonAsync<RemoteCommand>();
-            if(request is null||!BrowserBridge.AllowedActions.Contains(request.Action))return Results.BadRequest();
-            return await browser.ExecuteAsync(request.Action)?Results.Ok(new{done=true}):Results.Json(new{error="Кнопка недоступна или вкладка не ответила. Обнови плеер."},statusCode:409);
+            var request=await context.Request.ReadFromJsonAsync<BrowserCommandRequest>();
+            if(request is null||!(BrowserBridge.AllowedActions.Contains(request.Action)||BrowserBridge.TabActions.Contains(request.Action)))return Results.BadRequest();
+            return await browser.ExecuteAsync(request.Action,request.TabId)?Results.Ok(new{done=true}):Results.Json(new{error="Вкладка закрыта или браузер не ответил. Обнови список и проверь расширение."},statusCode:409);
         });
         instance.MapPost("/browser/pair",async(HttpContext context)=>
         {
@@ -173,6 +176,8 @@ public sealed class RemoteServer : IAsyncDisposable
             if(!auth.StartsWith("Bearer ")||!browser.Authorized(auth[7..]))return Results.Unauthorized();
             var report=await context.Request.ReadFromJsonAsync<BrowserReport>();
             if(report?.Title is null||report.Title.Length>140||report.Actions is null||report.Actions.Length>10||report.Actions.Any(a=>!BrowserBridge.AllowedActions.Contains(a))||report.Generation is not {Length:32}||!report.Generation.All(Uri.IsHexDigit))return Results.BadRequest();
+            if(report.Tabs is { } tabs&&(tabs.Length>200||tabs.Any(t=>t is null||t.Id<=0||t.Title is null||t.Title.Length>100||t.Domain is null||t.Domain.Length>120||t.Domain.Any(c=>char.IsControl(c)||c is '/' or ':' or '?' or '#'))||tabs.Select(t=>t.Id).Distinct().Count()!=tabs.Length||report.SelectedTab is int selected&&!tabs.Any(t=>t.Id==selected)))return Results.BadRequest();
+            if(report.SelectedTab is <=0)return Results.BadRequest();
             return Results.Ok(new{command=browser.Report(report,auth[7..])});
         });
         instance.MapPost("/api/command", async (HttpContext context) =>

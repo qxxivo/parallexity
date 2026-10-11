@@ -34,7 +34,7 @@ internal sealed class FakeControls : IDesktopControls
 
 internal static class SelfTest
 {
-    public static async Task PreviewAsync(int port = 0)
+    public static async Task PreviewAsync(int port = 0,bool browserDemo=false)
     {
         var trust = new TrustStore(Path.Combine(AppContext.BaseDirectory, "test-data", "preview-" + Guid.NewGuid().ToString("N")));
         var commandLog = Path.Combine(Environment.CurrentDirectory, "test-preview-commands.jsonl");
@@ -43,9 +43,31 @@ internal static class SelfTest
         var fake = new FakeControls { Observe = command => { lock (logLock) File.AppendAllText(commandLog, JsonSerializer.Serialize(command) + "\n"); } };
         await using var server = new RemoteServer(trust, fake, (_, _) => Task.FromResult(true), () => true, new ViewingMode(_=>true));
         await server.StartAsync(port, true);
+        using var browserTicker=browserDemo?StartBrowserDemo(server):null;
         var url = $"http://127.0.0.1:{server.Port}/#pair={trust.CreatePairingToken()}";
         await File.WriteAllTextAsync(Path.Combine(Environment.CurrentDirectory, "test-preview.json"), JsonSerializer.Serialize(new { url, fake = true }));
         await Task.Delay(TimeSpan.FromMinutes(30));
+    }
+
+    private static System.Threading.Timer StartBrowserDemo(RemoteServer server)
+    {
+        var browser=server.BrowserForTests;
+        browser.Pair(server.CreateBrowserCode().Split(':')[1]);
+        var tabs=new[]{new BrowserTab(41,"Вечерний фильм · тестовая вкладка","video.test"),new BrowserTab(42,"Музыка · тестовая вкладка","music.test",true),new BrowserTab(43,"Страница без плеера · тестовая вкладка","example.test")};
+        int? selected=41;var generation=Guid.NewGuid().ToString("N");string? ack=null;bool? success=null;var playing=true;var fullscreen=false;
+        void Tick()
+        {
+            var title=tabs.FirstOrDefault(tab=>tab.Id==selected)?.Title??"";
+            var actions=selected is 41 or 42?new[]{playing?"pause":"play","seek-back","seek-forward",fullscreen?"exit-fullscreen":"fullscreen"}:Array.Empty<string>();
+            var command=browser.Report(new(title,actions,ack,success,generation,tabs,selected));ack=null;success=null;
+            if(command is null)return;
+            ack=command.Id;success=true;
+            if(command.Action=="select-tab"){selected=command.TabId;generation=Guid.NewGuid().ToString("N");}
+            if(command.Action=="detach-tab"){selected=null;generation=Guid.NewGuid().ToString("N");}
+            if(command.Action=="play")playing=true;if(command.Action=="pause")playing=false;
+            if(command.Action=="fullscreen")fullscreen=true;if(command.Action=="exit-fullscreen")fullscreen=false;
+        }
+        Tick();return new System.Threading.Timer(_=>Tick(),null,1000,1000);
     }
 
     public static async Task<int> RunAsync()
@@ -141,7 +163,21 @@ internal static class SelfTest
             var browserWork=bridgeFixture.ExecuteAsync("skip-intro");var instruction=bridgeFixture.Report(new("Test player",new[]{"skip-intro"},Generation:generation))!;
             bridgeFixture.Report(new("Test player",new[]{"skip-intro"},instruction.Id,true,generation));
             Check(await browserWork,"Browser command completes only after matching acknowledgement");
-            var staleWork=bridgeFixture.ExecuteAsync("skip-intro");
+            Check(!await bridgeFixture.ExecuteAsync("select-tab",9),"Old extension without catalog cannot select tabs");
+            var fixtureTabs=new[]{new BrowserTab(7,"Video","video.test"),new BrowserTab(9,"Music","music.test",true)};
+            bridgeFixture.Report(new("Video",new[]{"pause"},Generation:generation,Tabs:fixtureTabs,SelectedTab:7));
+            Check(!await bridgeFixture.ExecuteAsync("select-tab",99),"Tab command must belong to latest catalog");
+            var selectionWork=bridgeFixture.ExecuteAsync("select-tab",9);
+            var selectionInstruction=bridgeFixture.Report(new("Video",new[]{"pause"},Generation:generation,Tabs:fixtureTabs,SelectedTab:7))!;
+            Check(selectionInstruction.TabId==9,"Tab selection carries only a validated numeric tab id");
+            generation=Guid.NewGuid().ToString("N");
+            bridgeFixture.Report(new("Music",new[]{"pause"},selectionInstruction.Id,true,generation,fixtureTabs,9));
+            Check(await selectionWork&&bridgeFixture.State.SelectedTab==9,"Selection acknowledgement survives expected page generation change");
+            var wrongSelection=bridgeFixture.ExecuteAsync("select-tab",7);
+            var wrongInstruction=bridgeFixture.Report(new("Music",new[]{"pause"},Generation:generation,Tabs:fixtureTabs,SelectedTab:9))!;
+            bridgeFixture.Report(new("Music",new[]{"pause"},wrongInstruction.Id,true,generation,fixtureTabs,9));
+            Check(!await wrongSelection,"Acknowledgement cannot claim a different selected tab");
+            var staleWork=bridgeFixture.ExecuteAsync("pause");
             bridgeFixture.Report(new("New page",new[]{"skip-intro"},Generation:Guid.NewGuid().ToString("N")));
             Check(!await staleWork,"Navigation cancels commands belonging to previous page");
             bridgeClock=bridgeClock.AddSeconds(11);Check(!bridgeFixture.State.Connected,"Browser capabilities expire when heartbeat stops");
@@ -263,6 +299,20 @@ internal static class SelfTest
             token = trust.CreatePairingToken();
             Check((await Post("/api/pair", new { token, name = "Phone" })).IsSuccessStatusCode, "Pairing approved on host grants a session");
             Check((await Post("/api/pair", new { token, name = "Phone" })).StatusCode == HttpStatusCode.Forbidden, "Pairing token cannot be replayed");
+            async Task<HttpResponseMessage> ReportCatalog(object body)
+            {
+                using var request=new HttpRequestMessage(HttpMethod.Post,"/browser/poll"){Content=JsonContent.Create(body)};
+                request.Headers.Add("Origin",extensionOrigin);request.Headers.Add("Authorization","Bearer "+apiBridgeToken);
+                return await client.SendAsync(request);
+            }
+            var catalogGeneration=Guid.NewGuid().ToString("N");
+            var catalog=Enumerable.Range(1,100).Select(id=>new BrowserTab(id,new string('x',100),"video.test")).ToArray();
+            Check((await ReportCatalog(new BrowserReport("Test player",new[]{"skip-intro"},Generation:catalogGeneration,Tabs:catalog,SelectedTab:7))).IsSuccessStatusCode,"Authenticated tab catalog may exceed media request body size");
+            Check((await client.GetFromJsonAsync<RemoteState>("/api/state"))?.Browser is {SelectedTab:7,Tabs.Length:100},"Trusted phone receives tab catalog and selection");
+            Check((await ReportCatalog(new BrowserReport("Test player",Array.Empty<string>(),Generation:catalogGeneration,Tabs:new[]{catalog[0],catalog[0]}))).StatusCode==HttpStatusCode.BadRequest,"Duplicate tab ids are rejected");
+            Check((await ReportCatalog(new BrowserReport("Test player",Array.Empty<string>(),Generation:catalogGeneration,Tabs:catalog,SelectedTab:999))).StatusCode==HttpStatusCode.BadRequest,"Selected tab must belong to reported catalog");
+            Check((await ReportCatalog(new BrowserReport("Test player",Array.Empty<string>(),Generation:catalogGeneration,Tabs:new[]{new BrowserTab(7,"Title","https://site.test/private?token=secret")}))).StatusCode==HttpStatusCode.BadRequest,"Tab metadata cannot contain a full URL");
+            Check((await Post("/api/browser",new{action="select-tab",tabId=999})).StatusCode==HttpStatusCode.Conflict,"Phone cannot select a tab outside the current catalog");
             Check((await client.GetAsync("/api/state")).IsSuccessStatusCode, "Same-origin GET works without Origin header");
             Check((await Post("/api/viewing",new{enabled=true},"https://attacker.invalid")).StatusCode==HttpStatusCode.Forbidden&&!server.ViewingEnabled,"Foreign origin cannot enable viewing mode");
             Check((await Post("/api/viewing",new{})).StatusCode==HttpStatusCode.BadRequest,"Viewing mode requires an explicit state");

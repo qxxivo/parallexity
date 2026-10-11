@@ -4,7 +4,7 @@ const path = require('node:path');
 const vm = require('node:vm');
 
 class Element {
-  constructor() { this.listeners = {}; this.children = new Map(); this.dataset = {}; this.value = '0'; this.disabled = false;
+  constructor(tagName='') { this.tagName=tagName;this.listeners = {}; this.children = new Map(); this.dataset = {}; this.value = '0'; this.disabled = false;
     const classes = new Set(['hidden']);
     this.classList = { add: x => classes.add(x), remove: x => classes.delete(x), contains: x => classes.has(x), toggle: (x,on) => { if (on ?? !classes.has(x)) classes.add(x); else classes.delete(x); } };
     this.style = { setProperty() {} };
@@ -12,7 +12,7 @@ class Element {
   addEventListener(name, callback) { (this.listeners[name] ??= []).push(callback); }
   emit(name, event = {}) { for (const callback of this.listeners[name] ?? []) callback(event); }
   querySelector(key) { if (!this.children.has(key)) this.children.set(key, new Element()); return this.children.get(key); }
-  replaceChildren(...items) { this.items=items; } querySelectorAll() {return this.items||[];} setAttribute() {} append() {} remove() {}
+  replaceChildren(...items) { this.items=items; } querySelectorAll() {return (this.items||[]).flatMap(item=>[...(item.tagName==='button'?[item]:[]),...item.querySelectorAll()]);} setAttribute() {} append(...items) {this.items=[...(this.items||[]),...items];} remove() {} showModal(){this.open=true;} close(){this.open=false;}
 }
 function harness(preferences = {}, storageUnavailable = false) {
   const nodes = new Map(), timers = new Map(); let sequence = 0;
@@ -20,7 +20,7 @@ function harness(preferences = {}, storageUnavailable = false) {
   const document = new Element(); document.hidden = false;
   const panels = ['media-panel','sound-panel','input-panel'].map(id => { const panel = node(id); panel.id = id; return panel; });
   const tabs = panels.map(panel => { const tab = node('tab-' + panel.id); tab.dataset.panel = panel.id; return tab; });
-  document.getElementById = node; document.querySelectorAll = selector => selector === '.tab' ? tabs : selector === '.tab-panel' ? panels : []; document.createElement = () => new Element();
+  document.getElementById = node; document.querySelectorAll = selector => selector === '.tab' ? tabs : selector === '.tab-panel' ? panels : []; document.createElement = tag=>new Element(tag);
   const window = new Element(); window.matchMedia = () => ({ matches: false }); window.scrollTo = () => {};
   const location = { hash: '', pathname: '/', origin: 'http://192.168.1.4:8765', assign: url => { location.assigned = url; } };
   const requests = [];
@@ -107,6 +107,16 @@ async function settle() { for (let i = 0; i < 20; i++) await Promise.resolve(); 
   assert.equal(JSON.parse(extras.requests.findLast(request=>request.url==='/api/browser').options.body).action,'skip-intro');
   extras.node('timer-cancel').emit('click');await settle();
   assert.equal(JSON.parse(extras.requests.findLast(request=>request.url==='/api/timer').options.body).action,'cancel');
+  extras.env.state.browser.tabs=[{id:7,title:'Film',domain:'video.test'},{id:9,title:'Music',domain:'music.test',audible:true}];extras.env.state.browser.selectedTab=7;
+  await extras.tick(1500);extras.node('browser-choose').emit('click');assert.equal(extras.node('browser-picker').open,true);
+  assert.equal(extras.node('browser-tab-list').items.length,2);
+  extras.node('browser-search').value='music';extras.node('browser-search').emit('input');assert.equal(extras.node('browser-tab-list').items.length,1,'Search filters by title or domain');
+  extras.node('browser-tab-list').items[0].items[0].emit('click');await settle();
+  assert.deepEqual(JSON.parse(extras.requests.findLast(request=>request.url==='/api/browser').options.body),{action:'select-tab',tabId:9});
+  assert.equal(extras.node('browser-picker').open,false,'Successful selection closes picker');
+  extras.node('browser-focus').emit('click');await settle();assert.deepEqual(JSON.parse(extras.requests.findLast(request=>request.url==='/api/browser').options.body),{action:'focus-tab',tabId:7});
+  extras.node('browser-refresh').emit('click');await settle();assert.equal(JSON.parse(extras.requests.findLast(request=>request.url==='/api/browser').options.body).action,'refresh-tabs');
+  extras.node('browser-detach').emit('click');await settle();assert.equal(JSON.parse(extras.requests.findLast(request=>request.url==='/api/browser').options.body).action,'detach-tab');
   extras.env.mode='offline';extras.window.emit('offline');await settle();assert.equal(extras.node('viewing-toggle').disabled,true,'Viewing control is disabled offline');
   console.log('Passed reconnection, visibility, stale requests, revocation, pairing links, browser buttons and timer actions.');
 })().catch(error => { console.error(error); process.exitCode = 1; });

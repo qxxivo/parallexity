@@ -22,7 +22,7 @@
     const abort = () => controller.abort();
     signal?.addEventListener('abort', abort, { once: true });
     if (signal?.aborted) controller.abort();
-    const timer = setTimeout(() => controller.abort(), path === '/api/pair' ? 75000 : 7000);
+    const timer = setTimeout(() => controller.abort(), path === '/api/pair' ? 75000 : path === '/api/browser' ? 12000 : 7000);
     try {
       const response = await fetch(path, { method: body === undefined ? 'GET' : 'POST', credentials: 'same-origin', cache: 'no-store', signal: controller.signal,
         headers: body === undefined ? {} : { 'Content-Type': 'application/json' }, body: body === undefined ? undefined : JSON.stringify(body) });
@@ -41,6 +41,8 @@
     $('touchpad').classList.add('disabled');
     $('timer-start').disabled = true; $('timer-cancel').disabled = true;
     $('viewing-toggle').disabled = true;
+    ['browser-choose','browser-focus','browser-detach','browser-refresh'].forEach(id=>$(id).disabled=true);
+    $('browser-tab-list').querySelectorAll?.('button').forEach(button=>button.disabled=true);
     $('browser-actions').querySelectorAll?.('button').forEach(button => button.disabled = true);
     cancelGesture();
   }
@@ -124,8 +126,17 @@
     $('viewing-state').textContent = state.viewingMode ? 'Включён' : 'Выключен';
     $('viewing-hint').textContent = state.viewingMode ? 'ПК остаётся активным. Таймер или «Погасить экран» выключит этот режим.' : 'Включи, чтобы ПК и экран не засыпали от бездействия во время просмотра.';
     const browser = state.browser;
-    $('browser-card').classList.toggle('hidden', !browser?.connected);
-    $('browser-title').textContent = browser?.title || '';
+    $('browser-card').classList.remove('hidden');
+    $('media-panel').classList.toggle('browser-priority',!!browser?.connected&&(Array.isArray(browser.tabs)||!!browser.selectedTab||!!browser.actions?.length));
+    $('browser-title').textContent = browser?.title || (browser?.connected ? 'Выбери вкладку с видео' : 'Подключи браузер к пульту');
+    const canChoose = !!browser?.connected && Array.isArray(browser.tabs);
+    $('browser-choose').disabled=!connected||extraPending||!canChoose;
+    $('browser-focus').classList.toggle('hidden',!canChoose||!browser.selectedTab);
+    $('browser-detach').classList.toggle('hidden',!canChoose||!browser.selectedTab);
+    $('browser-focus').disabled=$('browser-detach').disabled=!connected||extraPending;
+    $('browser-refresh').disabled=!connected||extraPending||!canChoose;
+    $('browser-hint').textContent = !browser?.connected ? 'В меню значка ПК открой «Расширение браузера…» и подключи расширение.' : !canChoose ? 'Обнови расширение и нажми в нём «Выбирать вкладки с телефона».' : !browser.selectedTab ? 'Открой список и выбери нужную страницу. Вкладки со звуком находятся выше.' : !browser.actions?.length ? 'На этой вкладке пока нет доступного плеера. Открой видео или выбери другую.' : 'Управление выбранной вкладкой. «На ПК» выведет её окно на передний план.';
+    renderTabList();
     const actions = (browser?.actions || []).filter(action => Object.hasOwn(browserLabels, action));
     const key = actions.join('|');
     if ($('browser-actions').dataset.key !== key) {
@@ -146,12 +157,42 @@
     $('timer-cancel').disabled = !connected || extraPending;
   }
   async function extraCommand(path, body) {
-    if (!connected || extraPending) return;
+    if (!connected || extraPending) return false;
     extraPending = true; renderExtras();
-    try { await api(path, body); }
+    let done=false;
+    try { await api(path, body); done=true; }
     catch (error) { toast(error.message); }
     finally { extraPending = false; await poll(); renderExtras(); }
+    return done;
   }
+  function renderTabList() {
+    const tabs=state?.browser?.tabs||[],selectedTab=state?.browser?.selectedTab;
+    const search=$('browser-search').value.trim().toLocaleLowerCase();
+    const matches=tabs.filter(tab=>(tab.title+' '+tab.domain).toLocaleLowerCase().includes(search));
+    const key=JSON.stringify([matches,selectedTab]);
+    if($('browser-tab-list').dataset.key!==key){
+      const rows=matches.map(tab=>{
+        const row=document.createElement('div');row.className='browser-tab-row'+(tab.id===selectedTab?' selected':'');
+        const choose=document.createElement('button');choose.type='button';choose.className='browser-tab-select';
+        const title=document.createElement('span');title.className='browser-tab-title';title.textContent=tab.title;
+        const meta=document.createElement('span');meta.className='browser-tab-meta';meta.textContent=tab.domain+(tab.audible?' · Со звуком':'')+(tab.id===selectedTab?' · Выбрана':' · Выбрать');
+        choose.append(title,meta);choose.addEventListener('click',async()=>{if(await extraCommand('/api/browser',{action:'select-tab',tabId:tab.id})){$('browser-picker').close();toast('Вкладка выбрана.');}});
+        const focus=document.createElement('button');focus.type='button';focus.className='secondary browser-tab-open';focus.textContent='На ПК ↗';focus.setAttribute('aria-label','Открыть на ПК: '+tab.title);
+        focus.addEventListener('click',async()=>{if(await extraCommand('/api/browser',{action:'focus-tab',tabId:tab.id}))toast('Вкладка открыта на ПК.');});row.append(choose,focus);return row;
+      });
+      $('browser-tab-list').replaceChildren(...rows);$('browser-tab-list').dataset.key=key;
+    }
+    $('browser-tab-list').querySelectorAll?.('button').forEach(button=>button.disabled=!connected||extraPending||!state?.browser?.connected);
+    $('browser-tab-count').textContent=matches.length+' из '+tabs.length;
+    $('browser-tabs-empty').textContent=tabs.length?'Нет совпадений. Попробуй другое название или сайт.':'Открой обычный сайт в браузере — он появится здесь.';
+    $('browser-tabs-empty').classList.toggle('hidden',!!matches.length);
+  }
+  $('browser-choose').addEventListener('click',()=>{if($('browser-choose').disabled)return;$('browser-search').value='';renderTabList();$('browser-picker').showModal();});
+  $('browser-picker-close').addEventListener('click',()=>$('browser-picker').close());
+  $('browser-search').addEventListener('input',renderTabList);
+  $('browser-refresh').addEventListener('click',()=>extraCommand('/api/browser',{action:'refresh-tabs'}));
+  $('browser-focus').addEventListener('click',()=>extraCommand('/api/browser',{action:'focus-tab',tabId:state?.browser?.selectedTab}));
+  $('browser-detach').addEventListener('click',()=>extraCommand('/api/browser',{action:'detach-tab'}));
   $('timer-form').addEventListener('submit', event => {
     event.preventDefault();
     const choice = $('timer-action').value;
