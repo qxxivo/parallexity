@@ -12,7 +12,7 @@ class Element {
   addEventListener(name, callback) { (this.listeners[name] ??= []).push(callback); }
   emit(name, event = {}) { for (const callback of this.listeners[name] ?? []) callback(event); }
   querySelector(key) { if (!this.children.has(key)) this.children.set(key, new Element()); return this.children.get(key); }
-  replaceChildren() {} setAttribute() {} append() {} remove() {}
+  replaceChildren(...items) { this.items=items; } querySelectorAll() {return this.items||[];} setAttribute() {} append() {} remove() {}
 }
 function harness(preferences = {}, storageUnavailable = false) {
   const nodes = new Map(), timers = new Map(); let sequence = 0;
@@ -32,7 +32,7 @@ function harness(preferences = {}, storageUnavailable = false) {
       if (env.mode === 'pending') return new Promise((resolve,reject) => options.signal.addEventListener('abort', () => reject(new Error('aborted')), { once: true }));
       if (env.mode === 'offline') return Promise.reject(new TypeError('Network unavailable'));
       return Promise.resolve({ ok: env.mode !== 'unauthorized', status: env.mode === 'unauthorized' ? 401 : 200,
-        json: async () => ({ computer: 'Test PC', media: [], apps: [], audio: { available: true, volume: 42, muted: false }, inputEnabled: false }) });
+        json: async () => ({ computer: 'Test PC', media: [], apps: [], audio: { available: true, volume: 42, muted: false }, inputEnabled: false, ...env.state }) });
     }, mode: 'success' };
   vm.runInNewContext(fs.readFileSync(path.join(__dirname, '../web/app.js'), 'utf8'), env);
   return { env, node, timers, requests, document, window, location, storage, async tick(delay) {
@@ -86,5 +86,21 @@ async function settle() { for (let i = 0; i < 20; i++) await Promise.resolve(); 
   assert.equal(invalid.node('media-panel').classList.contains('hidden'), false, 'Invalid tab falls back to media');
   const blocked = harness({}, true); await settle();
   assert.equal(blocked.node('volume').disabled, false, 'Blocked browser storage does not prevent remote use');
-  console.log('Passed reconnection, visibility, stale-request, revocation and pairing-link scenarios.');
+  const extras = harness(); await settle();
+  extras.env.state={browser:{connected:true,title:'Test video',actions:['pause','skip-intro','unknown']},timer:{remaining:61,action:'pause'}};
+  await extras.tick(1500);
+  assert.equal(extras.node('browser-card').classList.contains('hidden'),false);
+  assert.equal(extras.node('browser-actions').items.length,2,'Unknown actions never become buttons');
+  assert.equal(extras.node('timer-status').textContent,'Осталось 1:01');
+  extras.node('timer-action').value='display-off';extras.node('timer-minutes').value='30';
+  extras.node('timer-form').emit('submit',{preventDefault(){}});await settle();
+  let command=extras.requests.findLast(request=>request.url==='/api/timer');
+  assert.deepEqual(JSON.parse(command.options.body),{minutes:30,action:'display-off',session:null},'Screen timer cannot route to browser');
+  extras.node('timer-action').value='browser-pause';extras.node('timer-form').emit('submit',{preventDefault(){}});await settle();
+  command=extras.requests.findLast(request=>request.url==='/api/timer');assert.equal(JSON.parse(command.options.body).session,'browser');
+  extras.node('browser-actions').items.find(button=>button.textContent==='Пропустить заставку').emit('click');await settle();
+  assert.equal(JSON.parse(extras.requests.findLast(request=>request.url==='/api/browser').options.body).action,'skip-intro');
+  extras.node('timer-cancel').emit('click');await settle();
+  assert.equal(JSON.parse(extras.requests.findLast(request=>request.url==='/api/timer').options.body).action,'cancel');
+  console.log('Passed reconnection, visibility, stale requests, revocation, pairing links, browser buttons and timer actions.');
 })().catch(error => { console.error(error); process.exitCode = 1; });

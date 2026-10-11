@@ -13,7 +13,9 @@ internal static class Program
         }
         if (args.Contains("--preview"))
         {
-            SelfTest.PreviewAsync().GetAwaiter().GetResult();
+            var portIndex = Array.IndexOf(args, "--preview-port");
+            var port = portIndex >= 0 && int.TryParse(args.ElementAtOrDefault(portIndex + 1), out var parsed) && parsed is >0 and <=65535 ? parsed : 0;
+            SelfTest.PreviewAsync(port).GetAwaiter().GetResult();
             return;
         }
         ApplicationConfiguration.Initialize();

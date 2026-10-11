@@ -8,6 +8,7 @@ public record TrustedDevice(string Id, string TokenHash, string Name, string Add
 
 public sealed class TrustStore
 {
+    internal string Folder => Path.GetDirectoryName(file)!;
     private readonly object sync = new();
     private readonly string file;
     private List<TrustedDevice> devices = new();

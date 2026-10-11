@@ -138,6 +138,7 @@ public sealed class MainForm : Form
 
         var menu = new ContextMenuStrip();
         menu.Items.Add("Открыть parallexity", null, (_, _) => Restore());
+        menu.Items.Add("Расширение браузера…",null,(_,_)=>ShowBrowserSetup());
         updateMenu = menu.Items.Add("Проверить обновления", null, async (_, _) => await UpdateAsync());
         menu.Items.Add("Перезапустить пульт", null, (_, _) => Restart());
         menu.Items.Add("Выход", null, (_, _) => { exitRequested = true; Close(); });
@@ -322,6 +323,19 @@ public sealed class MainForm : Form
         }
         finally { if (!IsDisposed) { updating = false; updateButton.Enabled = true; updateMenu.Enabled = true; } }
     }
+    private void ShowBrowserSetup()
+    {
+        if(!started||stopping)return;
+        Restore();
+        using var dialog=new Form{Text="Подключить браузер",Size=new(500,410),StartPosition=FormStartPosition.CenterParent,BackColor=Background,ForeColor=Color.White,Font=Font,FormBorderStyle=FormBorderStyle.FixedDialog,MaximizeBox=false,MinimizeBox=false};
+        dialog.Controls.Add(new Label{Text="1. Скачай и распакуй расширение.\n2. В Chrome / Edge / Яндекс включи режим разработчика\n   на странице расширений и загрузи эту папку.\n3. Открой значок расширения и вставь код ниже.\n4. На сайте с видео нажми «Управлять этой вкладкой».\n\nКод действует 2 минуты. Подключение сохраняется\nпосле перезапуска ПК. Подключение по новому коду заменит старый доступ.",Location=new(18,18),Size=new(460,180)});
+        var code=new TextBox{Text=server.CreateBrowserCode(),ReadOnly=true,Location=new(18,206),Width=450,BackColor=Card,ForeColor=Color.White};dialog.Controls.Add(code);
+        var copy=Button("Скопировать код",(_,_)=>Clipboard.SetText(code.Text));copy.Location=new(18,248);dialog.Controls.Add(copy);
+        var download=Button("Скачать расширение",(_,_)=>Process.Start(new ProcessStartInfo("https://github.com/qxxivo/parallexity/releases/latest/download/parallexity-browser.zip"){UseShellExecute=true}));download.Location=new(250,248);dialog.Controls.Add(download);
+        var disconnect=Button("Отключить браузер",(_,_)=>{server.DisconnectBrowser();dialog.Close();});disconnect.Location=new(18,300);dialog.Controls.Add(disconnect);
+        dialog.ShowDialog(this);
+    }
+
     private void ShowHelp() => MessageBox.Show(this,
         "1. Телефон и ПК должны быть подключены к одному домашнему роутеру. ПК может быть по кабелю.\n\n" +
         "2. Гостевой Wi-Fi часто запрещает связь между устройствами. Используй обычную домашнюю сеть.\n\n" +

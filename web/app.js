@@ -39,11 +39,14 @@
     ['volume', 'mute', 'previous', 'play', 'next', 'session', 'send-text', 'display-off'].forEach(id => $(id).disabled = true);
     document.querySelectorAll('#app-mixer button,#app-mixer input,[data-input],[data-key],[data-scroll]').forEach(node => node.disabled = true);
     $('touchpad').classList.add('disabled');
+    $('timer-start').disabled = true; $('timer-cancel').disabled = true;
+    $('browser-actions').querySelectorAll?.('button').forEach(button => button.disabled = true);
     cancelGesture();
   }
   function render() {
     if (!state) return;
     $('computer').textContent = state.computer;
+    renderExtras();
     $('display-off').disabled = !connected || commandPending;
     const media = state.media || [];
     if (!media.some(m => m.id === selected)) selected = media[0]?.id || '';
@@ -111,6 +114,47 @@
       wakeRequested = false;
     }
   }
+  const browserLabels = {'play':'Воспроизвести','pause':'Пауза','seek-back':'−10 сек','seek-forward':'+10 сек','skip-intro':'Пропустить заставку','skip-ad':'Пропустить рекламу','next-episode':'Следующая серия'};
+  let extraPending = false;
+  function renderExtras() {
+    const browser = state.browser;
+    $('browser-card').classList.toggle('hidden', !browser?.connected);
+    $('browser-title').textContent = browser?.title || '';
+    const actions = (browser?.actions || []).filter(action => Object.hasOwn(browserLabels, action));
+    const key = actions.join('|');
+    if ($('browser-actions').dataset.key !== key) {
+      const buttons = actions.map(action => {
+        const button = document.createElement('button'); button.className = 'secondary'; button.type = 'button'; button.textContent = browserLabels[action];
+        button.addEventListener('click', () => extraCommand('/api/browser', {action})); return button;
+      });
+      $('browser-actions').replaceChildren(...buttons); $('browser-actions').dataset.key = key;
+    }
+    $('browser-actions').querySelectorAll?.('button').forEach(button => button.disabled = !connected || extraPending);
+    const timer = state.timer;
+    const remaining = timer?.remaining || 0;
+    const text = remaining ? Math.ceil(remaining / 60) + ' мин · ' + (timer.action === 'pause' ? 'Пауза' : 'Экран') : 'Выключен';
+    $('timer-summary').textContent = text;
+    $('timer-status').textContent = remaining ? 'Осталось ' + Math.floor(remaining / 60) + ':' + String(remaining % 60).padStart(2, '0') : timer?.result || '';
+    $('timer-cancel').classList.toggle('hidden', !remaining);
+    $('timer-start').disabled = !connected || extraPending;
+    $('timer-cancel').disabled = !connected || extraPending;
+  }
+  async function extraCommand(path, body) {
+    if (!connected || extraPending) return;
+    extraPending = true; renderExtras();
+    try { await api(path, body); }
+    catch (error) { toast(error.message); }
+    finally { extraPending = false; await poll(); renderExtras(); }
+  }
+  $('timer-form').addEventListener('submit', event => {
+    event.preventDefault();
+    const choice = $('timer-action').value;
+    const action = choice === 'browser-pause' ? 'pause' : choice;
+    const session = action !== 'pause' ? null : choice === 'browser-pause' ? (state?.browser?.connected ? 'browser' : '') : selected;
+    if (action === 'pause' && !session) return toast('Открой плеер на ПК или подключи вкладку браузера.');
+    void extraCommand('/api/timer', {minutes:Number($('timer-minutes').value), action, session});
+  });
+  $('timer-cancel').addEventListener('click', () => extraCommand('/api/timer', {minutes:0,action:'cancel'}));
   function reconnectNow() {
     pollFailures = 0; clearTimeout(pollTimer);
     if (polling) { wakeRequested = true; pollAbort?.abort(); }

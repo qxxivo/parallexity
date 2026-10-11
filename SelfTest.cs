@@ -34,7 +34,7 @@ internal sealed class FakeControls : IDesktopControls
 
 internal static class SelfTest
 {
-    public static async Task PreviewAsync()
+    public static async Task PreviewAsync(int port = 0)
     {
         var trust = new TrustStore(Path.Combine(AppContext.BaseDirectory, "test-data", "preview-" + Guid.NewGuid().ToString("N")));
         var commandLog = Path.Combine(Environment.CurrentDirectory, "test-preview-commands.jsonl");
@@ -42,7 +42,7 @@ internal static class SelfTest
         var logLock = new object();
         var fake = new FakeControls { Observe = command => { lock (logLock) File.AppendAllText(commandLog, JsonSerializer.Serialize(command) + "\n"); } };
         await using var server = new RemoteServer(trust, fake, (_, _) => Task.FromResult(true), () => true);
-        await server.StartAsync(0, true);
+        await server.StartAsync(port, true);
         var url = $"http://127.0.0.1:{server.Port}/#pair={trust.CreatePairingToken()}";
         await File.WriteAllTextAsync(Path.Combine(Environment.CurrentDirectory, "test-preview.json"), JsonSerializer.Serialize(new { url, fake = true }));
         await Task.Delay(TimeSpan.FromMinutes(30));
@@ -103,6 +103,38 @@ internal static class SelfTest
             var startupPath = Path.Combine(folder, "folder with spaces", "parallexity.exe");
             Check(DesktopStartup.Command(startupPath) == "\"" + Path.GetFullPath(startupPath) + "\" --startup", "Autostart quotes executable path and uses tray flag");
             Check(AppUpdates.ParseRelease(ReleaseJson()).Version == new Version(0, 3, 0), "Stable update metadata is parsed");
+            var timerClock=DateTimeOffset.UtcNow;var timerCalls=0;var timerTrusted=true;
+            await using(var timerFixture=new PcTimer(_=>timerTrusted,(_,_)=>{timerCalls++;return Task.FromResult(true);},()=>timerClock))
+            {
+                Check(!timerFixture.Start(new(0,"display-off"),"phone")&&!timerFixture.Start(new(15,"pause"),"phone"),"Timer rejects invalid duration and missing player");
+                Check(timerFixture.Start(new(1,"display-off"),"phone")&&timerFixture.State.Remaining==60,"PC timer starts independently of phone polling");
+                await timerFixture.TickAsync();Check(timerCalls==0,"Timer does not execute early");
+                timerClock=timerClock.AddMinutes(1);await timerFixture.TickAsync();await timerFixture.TickAsync();
+                Check(timerCalls==1&&timerFixture.State.Result=="Таймер выполнен.","Timer fires exactly once at deadline");
+                timerFixture.Start(new(1,"display-off"),"phone");timerFixture.Cancel();timerClock=timerClock.AddMinutes(2);await timerFixture.TickAsync();
+                Check(timerCalls==1,"Cancelled timer cannot fire");
+                timerFixture.Start(new(1,"display-off"),"phone");timerTrusted=false;timerClock=timerClock.AddMinutes(2);await timerFixture.TickAsync();
+                Check(timerCalls==1,"Revoked phone cannot execute its pending timer");
+            }
+            var bridgeClock=DateTimeOffset.UtcNow;var bridgeFile=Path.Combine(folder,"bridge-hash.txt");
+            var bridgeFixture=new BrowserBridge(()=>bridgeClock,bridgeFile);
+            var bridgeCode=bridgeFixture.CreateCode(8765).Split(':')[1];
+            Check(bridgeFixture.Pair(new string('0',32)) is null,"Browser rejects invalid pairing code");
+            var bridgeSecret=bridgeFixture.Pair(bridgeCode)??throw new Exception("Bridge pairing failed");
+            Check(bridgeFixture.Pair(bridgeCode) is null&&bridgeFixture.Authorized(bridgeSecret),"Browser code is single-use and creates an authenticated bridge");
+            Check(!File.ReadAllText(bridgeFile).Contains(bridgeSecret)&&new BrowserBridge(file:bridgeFile).Authorized(bridgeSecret),"Browser authentication persists only as a hash");
+            var generation=Guid.NewGuid().ToString("N");
+            bridgeFixture.Report(new("Test player",new[]{"skip-intro"},Generation:generation));
+            Check(!await bridgeFixture.ExecuteAsync("skip-ad"),"Unavailable browser action cannot be queued");
+            var browserWork=bridgeFixture.ExecuteAsync("skip-intro");var instruction=bridgeFixture.Report(new("Test player",new[]{"skip-intro"},Generation:generation))!;
+            bridgeFixture.Report(new("Test player",new[]{"skip-intro"},instruction.Id,true,generation));
+            Check(await browserWork,"Browser command completes only after matching acknowledgement");
+            var staleWork=bridgeFixture.ExecuteAsync("skip-intro");
+            bridgeFixture.Report(new("New page",new[]{"skip-intro"},Generation:Guid.NewGuid().ToString("N")));
+            Check(!await staleWork,"Navigation cancels commands belonging to previous page");
+            bridgeClock=bridgeClock.AddSeconds(11);Check(!bridgeFixture.State.Connected,"Browser capabilities expire when heartbeat stops");
+            var expiredCode=bridgeFixture.CreateCode(8765).Split(':')[1];bridgeClock=bridgeClock.AddMinutes(3);Check(bridgeFixture.Pair(expiredCode) is null,"Browser pairing code expires");
+            bridgeFixture.Disconnect();Check(!bridgeFixture.Authorized(bridgeSecret)&&!new BrowserBridge(file:bridgeFile).Authorized(bridgeSecret),"Disconnect revokes browser access persistently");
             RejectRelease(ReleaseJson(tag: "not-a-version"), "Invalid release version rejected");
             RejectRelease(ReleaseJson(prerelease: true), "Preview release rejected");
             RejectRelease(ReleaseJson(url: "https://attacker.invalid/update.exe"), "Foreign update host rejected");
@@ -192,6 +224,19 @@ internal static class SelfTest
             Check((await client.GetAsync("/api/state")).StatusCode == HttpStatusCode.Unauthorized, "Unpaired client cannot read PC state");
             Check((await Post("/api/command", new { action = "mute" })).StatusCode == HttpStatusCode.Unauthorized && fake.Commands == 0, "Unpaired client cannot control PC");
             Check((await Post("/api/command", new { action = "display-off" })).StatusCode == HttpStatusCode.Unauthorized && fake.Commands == 0, "Unpaired client cannot turn off display");
+            Check((await Post("/api/timer",new{minutes=15,action="display-off"})).StatusCode==HttpStatusCode.Unauthorized,"Unpaired phone cannot start timer");
+            Check((await Post("/api/browser",new{action="skip-ad"})).StatusCode==HttpStatusCode.Unauthorized,"Unpaired phone cannot control browser");
+            Check((await Post("/browser/pair",new{token=new string('0',32),name="Browser"})).StatusCode==HttpStatusCode.Forbidden,"Website origin cannot pair browser bridge");
+            var extensionOrigin="chrome-extension://"+new string('a',32);
+            var apiBridgeCode=server.CreateBrowserCode().Split(':')[1];
+            var bridgePairResponse=await Post("/browser/pair",new{token=apiBridgeCode,name="Browser"},extensionOrigin);
+            using var bridgePairJson=JsonDocument.Parse(await bridgePairResponse.Content.ReadAsStringAsync());
+            var apiBridgeToken=bridgePairJson.RootElement.GetProperty("token").GetString();
+            using(var bridgeReportRequest=new HttpRequestMessage(HttpMethod.Post,"/browser/poll"){Content=JsonContent.Create(new{title="Test player",actions=new[]{"skip-intro"},generation=Guid.NewGuid().ToString("N")})})
+            {
+                bridgeReportRequest.Headers.Add("Origin",extensionOrigin);bridgeReportRequest.Headers.Add("Authorization","Bearer "+apiBridgeToken);
+                Check((await client.SendAsync(bridgeReportRequest)).IsSuccessStatusCode,"Authenticated loopback extension can report player capabilities");
+            }
             var token = trust.CreatePairingToken();
             Check((await Post("/api/pair", new { token, name = "Phone" }, "https://attacker.invalid")).StatusCode == HttpStatusCode.Forbidden, "Foreign origin cannot pair");
             using (var request = new HttpRequestMessage(HttpMethod.Get, "/api/state"))
@@ -206,6 +251,10 @@ internal static class SelfTest
             Check((await Post("/api/pair", new { token, name = "Phone" })).IsSuccessStatusCode, "Pairing approved on host grants a session");
             Check((await Post("/api/pair", new { token, name = "Phone" })).StatusCode == HttpStatusCode.Forbidden, "Pairing token cannot be replayed");
             Check((await client.GetAsync("/api/state")).IsSuccessStatusCode, "Same-origin GET works without Origin header");
+            Check((await Post("/api/timer",new{minutes=15,action="display-off"})).IsSuccessStatusCode,"Trusted phone can arm PC timer");
+            var timerState=await client.GetFromJsonAsync<RemoteState>("/api/state");
+            Check(timerState?.Timer?.Remaining is >0 and <=900&&timerState.Browser?.Actions.Contains("skip-intro")==true,"Phone state contains PC countdown and reported browser actions");
+            Check((await Post("/api/timer",new{minutes=0,action="cancel"})).IsSuccessStatusCode,"Trusted phone can cancel PC timer");
             var before = fake.Commands;
             Check((await Post("/api/command", new { action = "display-off" }, "https://attacker.invalid")).StatusCode == HttpStatusCode.Forbidden && fake.Commands == before, "Foreign origin cannot turn off display");
             Check((await Post("/api/command", new { action = "sleep" })).StatusCode == HttpStatusCode.BadRequest && fake.Commands == before, "Sleep command is not exposed as display power");

@@ -22,11 +22,15 @@ public sealed class RemoteServer : IAsyncDisposable
     private WebApplication? app;
     private DragLease? drag;
     private System.Threading.Timer? dragTimer;
+    private PcTimer? pcTimer;
+    private readonly BrowserBridge browser;
+    internal string CreateBrowserCode()=>browser.CreateCode(Port);
+    internal void DisconnectBrowser()=>browser.Disconnect();
     public int Port { get; private set; }
     public string[] Addresses => NetworkAddresses().Select(ip => $"http://{ip}:{Port}").ToArray();
 
     public RemoteServer(TrustStore trust, IDesktopControls controls, Func<string, string, Task<bool>> approve, Func<bool>? allowInput = null)
-    { this.trust = trust; this.controls = controls; this.approve = approve; this.allowInput = allowInput ?? (() => false); }
+    { this.trust = trust; this.controls = controls; this.approve = approve; this.allowInput = allowInput ?? (() => false); browser=new(file:Path.Combine(trust.Folder,"browser-bridge.txt")); }
 
     public async Task StartAsync(int port = 8765, bool loopbackOnly = false)
     {
@@ -41,6 +45,7 @@ public sealed class RemoteServer : IAsyncDisposable
         });
         var instance = builder.Build();
         app = instance;
+        pcTimer = new PcTimer(trust.IsTrusted, (action,session)=>action=="pause" && session=="browser" ? browser.ExecuteAsync(action) : controls.ExecuteAsync(new(action,Session:session)));
         var input = new DragLease(controls, token => allowInput() && trust.IsTrusted(token));
         drag = input;
         var checkingDrag = 0;
@@ -70,6 +75,15 @@ public sealed class RemoteServer : IAsyncDisposable
                 { context.Response.StatusCode = 403; return; }
                 if (context.Request.Method == "POST" && !(context.Request.ContentType?.StartsWith("application/json", StringComparison.OrdinalIgnoreCase) ?? false))
                 { context.Response.StatusCode = 415; return; }
+            }
+            if(context.Request.Path.StartsWithSegments("/browser"))
+            {
+                var origin=context.Request.Headers.Origin.ToString();
+                if(!IPAddress.IsLoopback(context.Connection.RemoteIpAddress??IPAddress.Any)||host.Host is not ("127.0.0.1" or "localhost")||
+                    !System.Text.RegularExpressions.Regex.IsMatch(origin,@"^chrome-extension://[a-p]{32}$")) {context.Response.StatusCode=403;return;}
+                headers["Access-Control-Allow-Origin"]=origin;headers["Vary"]="Origin";
+                if(context.Request.Method=="OPTIONS"){headers["Access-Control-Allow-Methods"]="POST";headers["Access-Control-Allow-Headers"]="Content-Type, Authorization";context.Response.StatusCode=204;return;}
+                if(context.Request.Method!="POST"||!(context.Request.ContentType?.StartsWith("application/json",StringComparison.OrdinalIgnoreCase)??false)){context.Response.StatusCode=415;return;}
             }
             try { await next(context); }
             catch (JsonException) { if (!context.Response.HasStarted) context.Response.StatusCode = 400; }
@@ -110,7 +124,37 @@ public sealed class RemoteServer : IAsyncDisposable
         instance.MapGet("/api/state", async (HttpContext context) =>
         {
             if (!trust.IsTrusted(context.Request.Cookies["pr_session"])) return Results.Unauthorized();
-            return Results.Ok((await controls.ReadAsync()) with { InputEnabled = allowInput() });
+            return Results.Ok((await controls.ReadAsync()) with { InputEnabled = allowInput(), Timer=pcTimer.State, Browser=browser.State });
+        });
+        instance.MapPost("/api/timer",async(HttpContext context)=>
+        {
+            var token=context.Request.Cookies["pr_session"];
+            if(!trust.IsTrusted(token))return Results.Unauthorized();
+            var request=await context.Request.ReadFromJsonAsync<PcTimerRequest>();
+            if(request is null)return Results.BadRequest();
+            if(request.Action=="cancel"){pcTimer.Cancel();return Results.Ok(new{done=true});}
+            return pcTimer.Start(request,token!)?Results.Ok(new{done=true}):Results.BadRequest(new{error="Выбери таймер от 1 до 240 минут и плеер для паузы."});
+        });
+        instance.MapPost("/api/browser",async(HttpContext context)=>
+        {
+            if(!trust.IsTrusted(context.Request.Cookies["pr_session"]))return Results.Unauthorized();
+            var request=await context.Request.ReadFromJsonAsync<RemoteCommand>();
+            if(request is null||!BrowserBridge.AllowedActions.Contains(request.Action))return Results.BadRequest();
+            return await browser.ExecuteAsync(request.Action)?Results.Ok(new{done=true}):Results.Json(new{error="Кнопка недоступна или вкладка не ответила. Обнови плеер."},statusCode:409);
+        });
+        instance.MapPost("/browser/pair",async(HttpContext context)=>
+        {
+            var request=await context.Request.ReadFromJsonAsync<PairRequest>();
+            var token=request?.Token is {Length:32} code?browser.Pair(code):null;
+            return token is null?Results.Json(new{error="Код истёк. Создай новый в приложении ПК."},statusCode:403):Results.Ok(new{token});
+        });
+        instance.MapPost("/browser/poll",async(HttpContext context)=>
+        {
+            var auth=context.Request.Headers.Authorization.ToString();
+            if(!auth.StartsWith("Bearer ")||!browser.Authorized(auth[7..]))return Results.Unauthorized();
+            var report=await context.Request.ReadFromJsonAsync<BrowserReport>();
+            if(report?.Title is null||report.Title.Length>140||report.Actions is null||report.Actions.Length>10||report.Actions.Any(a=>!BrowserBridge.AllowedActions.Contains(a))||report.Generation is not {Length:32}||!report.Generation.All(Uri.IsHexDigit))return Results.BadRequest();
+            return Results.Ok(new{command=browser.Report(report,auth[7..])});
         });
         instance.MapPost("/api/command", async (HttpContext context) =>
         {
@@ -160,6 +204,8 @@ public sealed class RemoteServer : IAsyncDisposable
         .Select(a => a.Address.ToString()).Distinct().ToArray();
     public async ValueTask DisposeAsync()
     {
+        browser.Stop();
+        if(pcTimer is not null){await pcTimer.DisposeAsync();pcTimer=null;}
         if (dragTimer is not null) { await dragTimer.DisposeAsync(); dragTimer = null; }
         if (drag is not null) { await drag.StopAsync(); drag = null; }
         if (app is not null) { await app.StopAsync(); await app.DisposeAsync(); app = null; }
