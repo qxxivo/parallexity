@@ -32,6 +32,8 @@ jobs:
         run: node scripts/player.test.cjs
       - name: Browser bridge routing
         run: node scripts/browser-bridge.test.cjs
+      - name: Browser frame protocol
+        run: node scripts/content.test.cjs
       - name: Build standalone app
         shell: pwsh
         run: ./build.ps1 -PackageOnly

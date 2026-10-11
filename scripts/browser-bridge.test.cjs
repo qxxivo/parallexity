@@ -4,6 +4,7 @@ const vm=require('node:vm');
 const {webcrypto}=require('node:crypto');
 const listeners={};let stored={bridge:{port:8765,token:'test'},target:7},posts=[],sent=[],next=null,beforeResponse=null;
 let responseStatus=200;
+let clockOffset=0,inspections=0;const realNow=Date.now.bind(Date);class Clock extends Date{static now(){return realNow()+clockOffset;}}
 const event=name=>({addListener(fn){listeners[name]=fn;}});
 let windowState='maximized',windowUpdates=[];
 let scripts=[];
@@ -12,8 +13,8 @@ const chrome={runtime:{id:'test-extension',onMessage:event('message'),onStartup:
  get:async key=>typeof key==='string'?{[key]:stored[key]}:{...stored},
  set:async values=>{const changes={};for(const[key,newValue]of Object.entries(values)){changes[key]={oldValue:stored[key],newValue};stored[key]=newValue;}listeners.changed(changes,'local');},
  remove:async keys=>{const changes={};for(const key of Array.isArray(keys)?keys:[keys]){changes[key]={oldValue:stored[key]};delete stored[key];}listeners.changed(changes,'local');}
-},onChanged:event('changed')},windows:{get:async id=>({id,state:windowState}),update:async(id,options)=>{windowUpdates.push({id,...options});if(options.state)windowState=options.state;return{id,state:windowState};}},tabs:{query:async()=>[...tabData.values()],get:async id=>{if(!tabData.has(id))throw Error('Closed');return tabData.get(id);},update:async()=>{},onRemoved:event('removed'),onUpdated:event('updated'),sendMessage:async(tab,message,options)=>{sent.push({tab,message,options});return{id:message.command.id,success:true};}},webNavigation:{onDOMContentLoaded:event('navigation')},scripting:{executeScript:async options=>{scripts.push(options);}}};
-const context=vm.createContext({chrome,crypto:webcrypto,Date,URL,setInterval:()=>{},clearInterval:()=>{},AbortSignal,fetch:async(url,options)=>{
+},onChanged:event('changed')},windows:{get:async id=>({id,state:windowState}),update:async(id,options)=>{windowUpdates.push({id,...options});if(options.state)windowState=options.state;return{id,state:windowState};}},tabs:{query:async()=>[...tabData.values()],get:async id=>{if(!tabData.has(id))throw Error('Closed');return tabData.get(id);},update:async()=>{},onRemoved:event('removed'),onUpdated:event('updated'),sendMessage:async(tab,message,options)=>{if(message.kind==='inspect'){inspections++;return{title:'Background video',actions:['play'],page:message.page,area:500};}sent.push({tab,message,options});return{id:message.command.id,success:true};}},webNavigation:{onDOMContentLoaded:event('navigation')},scripting:{executeScript:async options=>{scripts.push(options);}}};
+const context=vm.createContext({chrome,crypto:webcrypto,Date:Clock,URL,setInterval:()=>{},clearInterval:()=>{},setTimeout,clearTimeout,AbortSignal,fetch:async(url,options)=>{
  const body=JSON.parse(options.body);posts.push(body);if(beforeResponse){const run=beforeResponse;beforeResponse=null;await run();}
  const command=next?{...next,generation:body.generation}:null;next=null;const status=responseStatus;responseStatus=200;return{ok:status===200,status,json:async()=>({command})};
 }});
@@ -54,5 +55,7 @@ const report=(tab=7,actions=['skip-intro'])=>new Promise(resolve=>listeners.mess
  stored.tabSharing=false;next={id:'no-consent',action:'select-tab',tabId:7};await pulse();await pulse();assert.equal(posts.at(-1).tabs,null);assert.equal(posts.at(-1).success,false,'Disabling sharing blocks tab selection');
  stored.tabSharing=true;stored.target=11;await pulse();assert.equal(posts.at(-1).title,'');assert.equal(posts.at(-1).selectedTab,null);assert.ok(!JSON.stringify(posts.at(-1)).includes('PRIVATE-INCOGNITO'),'Even a stale incognito target cannot disclose its title');
  responseStatus=401;beforeResponse=async()=>{await chrome.storage.local.set({bridge:{port:8765,token:'replacement'}});};await pulse();assert.equal(stored.bridge.token,'replacement','Late rejection cannot remove a newly paired credential');
+ clockOffset+=20000;stored.target=7;await report(7,['play']);clockOffset+=5000;await pulse();assert.equal(inspections,1);assert.ok(posts.at(-1).actions.includes('play'),'Background player remains available without its own timer heartbeat');
+ await listeners.startup();await new Promise(setImmediate);assert.equal(stored.target,undefined,'Browser restart clears non-persistent tab ids');
  console.log('Browser routing passed: media, fullscreen, tab catalog privacy, selection, acknowledgement across navigation, focus, detach, closed tabs and consent.');
 })().catch(error=>{console.error(error);process.exitCode=1;});

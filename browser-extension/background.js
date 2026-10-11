@@ -30,6 +30,14 @@ async function sync(){
   let catalog=null;
   if(sharing)catalog=(await chrome.tabs.query({url:origins})).filter(eligible).sort((a,b)=>(b.id===target)-(a.id===target)||Number(!!b.audible)-Number(!!a.audible)||Number(!!b.active)-Number(!!a.active)||a.id-b.id).slice(0,200);
   const tab=target?await chrome.tabs.get(target).catch(()=>null):null,selected=eligible(tab)?target:null;
+  const pageGeneration=generation;
+  for(const[id,frame]of frames)if(frame.tab===selected&&Date.now()-frame.seen>1500&&(frame.area>0||frame.actions?.length)){
+   let timeout;
+   try{
+    const snapshot=await Promise.race([chrome.tabs.sendMessage(selected,{kind:'inspect',page:frame.page},{frameId:id}),new Promise(resolve=>{timeout=setTimeout(()=>resolve(null),1200);})]);
+    if(snapshot?.page===frame.page&&typeof snapshot.title==='string'&&Array.isArray(snapshot.actions)&&pageGeneration===generation&&frames.get(id)===frame)frames.set(id,{...snapshot,tab:selected,seen:Date.now()});
+   }catch{}finally{clearTimeout(timeout);}
+  }
   for(const[id,frame]of frames)if(frame.tab!==selected||Date.now()-frame.seen>4000)frames.delete(id);
   const sources=[...frames].sort((a,b)=>(b[1].area||0)-(a[1].area||0));
   const actions=[...new Set(sources.flatMap(([,frame])=>frame.actions))].filter(action=>mediaActions.includes(action));
@@ -92,5 +100,5 @@ async function resume(pollNow=true){
 }
 chrome.alarms.onAlarm.addListener(alarm=>{if(alarm.name==='parallexity-sync')void sync();});
 function wake(){nextSync=0;failures=0;void resume();}
-chrome.runtime.onStartup.addListener(wake);chrome.runtime.onInstalled.addListener(wake);
+chrome.runtime.onStartup.addListener(async()=>{await chrome.storage.local.remove('target');newPage();wake();});chrome.runtime.onInstalled.addListener(wake);
 void resume(false);
