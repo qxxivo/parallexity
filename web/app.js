@@ -8,6 +8,7 @@
   if (pairToken) history.replaceState(null, '', location.pathname);
   $('device-name').value = /iPhone|iPad/.test(navigator.userAgent) ? 'Мой iPhone' : /Android/.test(navigator.userAgent) ? 'Мой Android' : 'Мой телефон';
 
+  function paintRange(node) { node.style.setProperty('--fill', node.value + '%'); }
   function toast(text) { $('toast').textContent = text; $('toast').style.display = 'block'; clearTimeout(toastTimer); toastTimer = setTimeout(() => $('toast').style.display = 'none', 5000); }
   async function api(path, body) {
     const controller = new AbortController();
@@ -26,6 +27,7 @@
     ['volume', 'mute', 'previous', 'play', 'next', 'session', 'send-text'].forEach(id => $(id).disabled = true);
     document.querySelectorAll('#app-mixer button,#app-mixer input,[data-input],[data-key],[data-scroll]').forEach(node => node.disabled = true);
     $('touchpad').classList.add('disabled');
+    cancelGesture();
   }
   function render() {
     if (!state) return;
@@ -44,12 +46,12 @@
     $('media-app').textContent = current?.app || 'Медиа';
     $('title').textContent = current?.title || (current ? 'Без названия' : 'Открой музыку или видео');
     $('artist').textContent = current?.artist || (current ? current.app : 'Плееры появятся здесь автоматически');
-    $('play').textContent = current?.playing ? 'Ⅱ' : '▶';
+    $('play').querySelector('use').setAttribute('href', current?.playing ? '#i-pause' : '#i-play');
     $('play').setAttribute('aria-label', current?.playing ? 'Пауза' : 'Воспроизвести');
     $('play').disabled = !connected || commandPending || !current || !(current.playing ? current.canPause : current.canPlay);
     $('next').disabled = !connected || commandPending || !current?.canNext;
     $('previous').disabled = !connected || commandPending || !current?.canPrevious;
-    $('media-note').textContent = state.mediaError || 'Показываем плееры, которыми разрешает управлять Windows.';
+    $('media-note').textContent = state.mediaError || '';
     const audio = state.audio;
     if (!editingVolume && pendingVolume === null && !volumeSending) { $('volume').value = audio.volume; $('volume-number').textContent = audio.available ? audio.volume + '%' : '—'; }
     $('volume').disabled = !connected || !audio.available;
@@ -57,13 +59,15 @@
     $('mute').querySelector('span').textContent = audio.muted ? 'Включить звук' : 'Выключить звук';
     $('mute').setAttribute('aria-pressed', String(audio.muted));
     $('audio-note').textContent = audio.available ? (audio.muted ? 'Звук выключен' : 'Общий звук ПК') : 'Нет устройства вывода';
+    paintRange($('volume'));
     renderMixer();
     const enabled = connected && state.inputEnabled;
     $('input-status').textContent = enabled ? 'Разрешено' : 'Выключено';
-    $('input-note').textContent = enabled ? 'Управляешь активным окном ПК. Держи экран компьютера в поле зрения.' : 'Разреши мышь и клавиатуру в окне parallexity на ПК.';
+    $('input-note').textContent = enabled ? 'Касание — клик. Держи экран ПК в поле зрения.' : 'Разреши мышь и клавиатуру в окне parallexity на ПК.';
     document.querySelectorAll('[data-input],[data-key],[data-scroll],#send-text').forEach(node => node.disabled = !enabled);
     $('send-text').disabled = !enabled || textSending;
     $('touchpad').classList.toggle('disabled', !enabled);
+    if (!enabled && (pointers.size || drag)) cancelGesture();
   }
   async function poll() {
     if (polling || pairing || document.hidden) return;
@@ -113,7 +117,7 @@
     finally { volumeSending = false; if (!editingVolume) await poll(); }
   }
   $('volume').addEventListener('input', () => {
-    editingVolume = true; pendingVolume = Number($('volume').value); $('volume-number').textContent = pendingVolume + '%';
+    paintRange($('volume')); editingVolume = true; pendingVolume = Number($('volume').value); $('volume-number').textContent = pendingVolume + '%';
     clearTimeout(volumeTimer); volumeTimer = setTimeout(sendVolume, 120);
   });
   function finishVolume() { editingVolume = false; clearTimeout(volumeTimer); void sendVolume(); }
@@ -145,7 +149,7 @@
           catch (error) { row.pending = null; toast(error.message); }
           finally { row.sending = false; if (!row.editing) void poll(); }
         }
-        slider.addEventListener('input', () => { row.editing = true; row.pending = Number(slider.value); number.textContent = row.pending + '%'; clearTimeout(row.timer); row.timer = setTimeout(send,120); });
+        slider.addEventListener('input', () => { paintRange(slider); row.editing = true; row.pending = Number(slider.value); number.textContent = row.pending + '%'; clearTimeout(row.timer); row.timer = setTimeout(send,120); });
         const finish = () => { row.editing = false; clearTimeout(row.timer); void send(); };
         slider.addEventListener('change',finish); slider.addEventListener('pointercancel',finish); slider.addEventListener('blur',finish);
         mute.addEventListener('click', () => command('app-mute',{app:app.id}));
@@ -153,37 +157,64 @@
       row.name.textContent = app.name;
       row.slider.setAttribute('aria-label', 'Громкость ' + app.name);
       if (!row.editing && !row.sending && row.pending === null) { row.slider.value = app.volume; row.number.textContent = app.volume + '%'; }
+      paintRange(row.slider);
       row.slider.disabled = !connected; row.mute.disabled = !connected || commandPending;
       row.mute.textContent = app.muted ? 'Включить звук' : 'Выключить звук'; row.mute.setAttribute('aria-pressed',String(app.muted));
     }
   }
   document.querySelectorAll('.tab').forEach(button => button.addEventListener('click', () => {
+    cancelGesture();
     document.querySelectorAll('.tab-panel').forEach(panel => panel.classList.toggle('hidden', panel.id !== button.dataset.panel));
     document.querySelectorAll('.tab').forEach(tab => { tab.classList.toggle('active',tab === button); tab.setAttribute('aria-pressed',String(tab === button)); });
+    window.scrollTo({top:0,behavior:'auto'});
   }));
-  let inputChain = Promise.resolve(), inputQueued = 0, motionBusy = false, dx = 0, dy = 0, wheel = 0;
+  let inputChain = Promise.resolve(), inputQueued = 0, motionBusy = false, dx = 0, dy = 0, wheel = 0, inputEpoch = 0;
+  let drag = null, holdTimer = null, lastDragMotion = 0;
+  const pointers = new Map();
+  let gestureTime = 0, gestureDistance = 0, hadMultiple = false, hadDrag = false;
+  const pad = $('touchpad');
   const inputAllowed = () => connected && state?.inputEnabled && !document.hidden;
-  function sendInput(body) {
-    if (!inputAllowed() || inputQueued >= 5) return Promise.resolve(false);
+  function dragAppearance(active) {
+    pad.classList.toggle('dragging',active);
+    $('pad-label').textContent = active ? 'Перетаскиваешь' : 'Двигай пальцем';
+    $('pad-hint').textContent = active ? 'Отпусти палец, чтобы отпустить мышь' : 'Зажми и двигай — перетаскивание';
+  }
+  function sendInput(body, release = false) {
+    if (!release && (!inputAllowed() || inputQueued >= 5)) return Promise.resolve(false);
+    const epoch = inputEpoch;
     inputQueued++;
     const request = inputChain.then(async () => {
-      if (!inputAllowed()) return false;
+      if (!release && (!inputAllowed() || epoch !== inputEpoch)) return false;
       await api('/api/command',body); return true;
-    }).catch(error => { dx = dy = wheel = 0; toast(error.message); return false; });
+    }).catch(error => { if (!release) cancelGesture(); toast(error.message); return false; });
     inputChain = request.finally(() => inputQueued--);
     return inputChain;
   }
-  setInterval(async () => {
-    if (!inputAllowed()) { dx = dy = wheel = 0; return; }
-    if (motionBusy) return;
+  function releaseDrag() {
+    const previous = drag; drag = null; dragAppearance(false);
+    if (previous) void sendInput({action:'drag-end',drag:previous},true);
+  }
+  function cancelGesture() {
+    clearTimeout(holdTimer); holdTimer = null;
+    dx = dy = wheel = 0; pointers.clear(); inputEpoch++;
+    releaseDrag();
+  }
+  async function flushMotion() {
+    if (!inputAllowed() || motionBusy) return;
     const x = Math.trunc(dx), y = Math.trunc(dy), scroll = Math.trunc(wheel);
-    if (!x && !y && !scroll) return;
+    const heartbeat = drag && performance.now() - lastDragMotion >= 150;
+    if (!x && !y && !scroll && !heartbeat) return;
     dx -= x; dy -= y; wheel -= scroll; motionBusy = true;
     try {
       if (scroll) await sendInput({action:'scroll',dy:Math.max(-1200,Math.min(1200,scroll))});
-      if (x || y) await sendInput({action:'pointer',dx:Math.max(-200,Math.min(200,x)),dy:Math.max(-200,Math.min(200,y))});
+      if (x || y || heartbeat) {
+        const held = drag;
+        if (held) lastDragMotion = performance.now();
+        await sendInput({action:held ? 'drag-move' : 'pointer',drag:held,dx:Math.max(-200,Math.min(200,x)),dy:Math.max(-200,Math.min(200,y))});
+      }
     } finally { motionBusy = false; }
-  },40);
+  }
+  setInterval(() => { if (!inputAllowed()) { if (pointers.size || drag) cancelGesture(); return; } void flushMotion(); },25);
   document.querySelectorAll('[data-input]').forEach(button => button.addEventListener('click',() => sendInput({action:button.dataset.input})));
   document.querySelectorAll('[data-key]').forEach(button => button.addEventListener('click',() => sendInput({action:'key',key:button.dataset.key})));
   document.querySelectorAll('[data-scroll]').forEach(button => button.addEventListener('click',() => sendInput({action:'scroll',dy:Number(button.dataset.scroll)})));
@@ -191,37 +222,58 @@
     if (textSending) return;
     const text = $('remote-text').value;
     if (!text.length) return toast('Сначала напиши текст.');
-    textSending = true;
-    $('send-text').disabled = true;
+    textSending = true; $('send-text').disabled = true;
     const done = await sendInput({action:'text',text});
     if (done) { if ($('remote-text').value === text) $('remote-text').value = ''; toast('Текст введён на ПК.'); }
-    textSending = false;
-    $('send-text').disabled = !inputAllowed();
+    textSending = false; $('send-text').disabled = !inputAllowed();
   });
-  const pointers = new Map(); let gestureTime = 0, gestureDistance = 0, hadMultiple = false;
-  const pad = $('touchpad');
   pad.addEventListener('contextmenu',event => event.preventDefault());
   pad.addEventListener('pointerdown',event => {
     if (!inputAllowed()) return;
     event.preventDefault(); pad.setPointerCapture(event.pointerId);
-    if (!pointers.size) { gestureTime = performance.now(); gestureDistance = 0; hadMultiple = false; }
+    if (!pointers.size) {
+      gestureTime = performance.now(); gestureDistance = 0; hadMultiple = hadDrag = false;
+      holdTimer = setTimeout(async () => {
+        if (pointers.size !== 1 || gestureDistance >= 7 || hadMultiple || !inputAllowed()) return;
+        const bytes = crypto.getRandomValues(new Uint8Array(16));
+        const id = Array.from(bytes,value=>value.toString(16).padStart(2,'0')).join('');
+        drag = id; hadDrag = true; lastDragMotion = performance.now(); dragAppearance(true);
+        const done = await sendInput({action:'drag-start',drag:id});
+        if (!done && drag === id) cancelGesture();
+      },450);
+    }
     pointers.set(event.pointerId,{x:event.clientX,y:event.clientY});
-    if (pointers.size > 1) hadMultiple = true;
+    if (pointers.size > 1) { hadMultiple = true; clearTimeout(holdTimer); releaseDrag(); dx = dy = 0; }
   });
   pad.addEventListener('pointermove',event => {
     const old = pointers.get(event.pointerId); if (!old || !inputAllowed()) return;
     const x = event.clientX - old.x, y = event.clientY - old.y;
     pointers.set(event.pointerId,{x:event.clientX,y:event.clientY}); gestureDistance += Math.hypot(x,y);
-    if (pointers.size > 1) wheel = Math.max(-1200,Math.min(1200,wheel + y * -3));
-    else if (!hadMultiple) { const gain = $('precise').checked ? .35 : 1.2; dx = Math.max(-200,Math.min(200,dx + x * gain)); dy = Math.max(-200,Math.min(200,dy + y * gain)); }
+    if (gestureDistance >= 7) clearTimeout(holdTimer);
+    if (pointers.size > 1) wheel = Math.max(-1200,Math.min(1200,wheel - y * 1.5));
+    else if (!hadMultiple) {
+      const gain = $('precise').checked ? .35 : 1.15;
+      dx = Math.max(-200,Math.min(200,dx + x * gain)); dy = Math.max(-200,Math.min(200,dy + y * gain));
+    }
   });
   function endGesture(event) {
     if (!pointers.has(event.pointerId)) return;
-    pointers.delete(event.pointerId);
-    if (!pointers.size && !hadMultiple && gestureDistance < 8 && performance.now() - gestureTime < 250 && event.type === 'pointerup') void sendInput({action:'click'});
+    pointers.delete(event.pointerId); clearTimeout(holdTimer);
+    if (!pointers.size) {
+      if (drag) {
+        const held = drag, x = Math.trunc(dx), y = Math.trunc(dy);
+        dx = dy = 0;
+        if (x || y) void sendInput({action:'drag-move',drag:held,dx:x,dy:y});
+        releaseDrag();
+      } else if (!hadMultiple && !hadDrag && gestureDistance < 8 && performance.now() - gestureTime < 250 && event.type === 'pointerup') void sendInput({action:'click'});
+    }
   }
-  pad.addEventListener('pointerup',endGesture); pad.addEventListener('pointercancel',endGesture); pad.addEventListener('lostpointercapture',event => pointers.delete(event.pointerId));
-  document.addEventListener('visibilitychange', () => { dx = dy = wheel = 0; pointers.clear(); if (!document.hidden) void poll(); });
+  pad.addEventListener('pointerup',endGesture);
+  pad.addEventListener('pointercancel',cancelGesture);
+  pad.addEventListener('lostpointercapture',event => { if (pointers.has(event.pointerId)) cancelGesture(); });
+  document.addEventListener('visibilitychange', () => { cancelGesture(); if (!document.hidden) void poll(); });
+  window.addEventListener('blur',cancelGesture);
+  window.addEventListener('pagehide',cancelGesture);
   window.addEventListener('online', poll);
   setInterval(poll, 1500); void poll();
 })();

@@ -5,9 +5,9 @@ namespace PhoneRemote;
 
 public sealed class MainForm : Form
 {
-    private static readonly Color Background = Color.FromArgb(16, 20, 29);
-    private static readonly Color Card = Color.FromArgb(26, 32, 45);
-    private static readonly Color Muted = Color.FromArgb(161, 174, 196);
+    private static readonly Color Background = Color.FromArgb(18, 18, 21);
+    private static readonly Color Card = Color.FromArgb(28, 28, 31);
+    private static readonly Color Muted = Color.FromArgb(160, 160, 170);
     private readonly TrustStore trust;
     private readonly RemoteServer server;
     private readonly NotifyIcon tray;
@@ -38,7 +38,8 @@ public sealed class MainForm : Form
         BackColor = Background;
         ForeColor = Color.White;
         Font = new("Segoe UI", 10);
-        Icon = SystemIcons.Application;
+        using (var iconStream = typeof(MainForm).Assembly.GetManifestResourceStream("PhoneRemote.assets.parallexity.ico")!)
+        using (var logo = new Icon(iconStream)) Icon = (Icon)logo.Clone();
         trust = new(Path.Combine(AppContext.BaseDirectory, "data"));
         server = new(trust, new DesktopControls(), ApproveAsync, () => inputEnabled);
         trust.Changed += () => { if (IsHandleCreated && !IsDisposed) BeginInvoke(UpdateDevices); };
@@ -76,6 +77,8 @@ public sealed class MainForm : Form
         right.Controls.Add(Button("Помощь с сетью", (_, _) => ShowHelp()));
         right.Controls.Add(Button("Перезапустить пульт", (_, _) => Restart()));
         updateButton = Button("Проверить обновления", async (_, _) => await UpdateAsync());
+        updateButton.BackColor = Color.FromArgb(243, 243, 245);
+        updateButton.ForeColor = Color.FromArgb(24, 24, 27);
         right.Controls.Add(updateButton);
         var inputToggle = new CheckBox { Text = "Разрешить мышь и клавиатуру", Width = 280, Height = 45, ForeColor = Color.White, Margin = new(0, 8, 0, 4) };
         inputToggle.CheckedChanged += (_, _) => inputEnabled = inputToggle.Checked;
@@ -86,7 +89,7 @@ public sealed class MainForm : Form
         right.Controls.SetChildIndex(inputDescription, 5);
         right.Controls.SetChildIndex(updateButton, 4);
         root.Controls.Add(right, 1, 1);
-        status.Dock = DockStyle.Fill; status.TextAlign = ContentAlignment.MiddleLeft; status.ForeColor = Color.FromArgb(117, 221, 176); status.Text = "Запускаем пульт…";
+        status.Dock = DockStyle.Fill; status.TextAlign = ContentAlignment.MiddleLeft; status.ForeColor = Color.FromArgb(210, 210, 220); status.Text = "Запускаем пульт…";
         root.Controls.Add(status, 0, 2); root.SetColumnSpan(status, 2);
         var footer = Paragraph("Локальное подключение · без аккаунта и облака\nЗакрытие окна сворачивает программу к часам. Выход — через меню значка.", Muted);
         footer.Dock = DockStyle.Fill; footer.Font = new("Segoe UI", 9); root.Controls.Add(footer, 0, 3); root.SetColumnSpan(footer, 2);
@@ -241,6 +244,6 @@ public sealed class MainForm : Form
     private static Button Button(string text, EventHandler click)
     {
         var button = new Button { Text = text, Size = new(190, 35), FlatStyle = FlatStyle.Flat, BackColor = Card, ForeColor = Color.White, Margin = new(0, 0, 0, 9), Cursor = Cursors.Hand };
-        button.FlatAppearance.BorderColor = Color.FromArgb(65, 78, 101); button.Click += click; return button;
+        button.FlatAppearance.BorderColor = Color.FromArgb(65, 65, 72); button.Click += click; return button;
     }
 }

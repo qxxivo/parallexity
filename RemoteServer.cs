@@ -20,6 +20,8 @@ public sealed class RemoteServer : IAsyncDisposable
     private readonly Dictionary<string, Queue<DateTimeOffset>> attempts = new();
     private readonly object rateLock = new();
     private WebApplication? app;
+    private DragLease? drag;
+    private System.Threading.Timer? dragTimer;
     public int Port { get; private set; }
     public string[] Addresses => NetworkAddresses().Select(ip => $"http://{ip}:{Port}").ToArray();
 
@@ -39,6 +41,15 @@ public sealed class RemoteServer : IAsyncDisposable
         });
         var instance = builder.Build();
         app = instance;
+        var input = new DragLease(controls, token => allowInput() && trust.IsTrusted(token));
+        drag = input;
+        var checkingDrag = 0;
+        dragTimer = new System.Threading.Timer(async _ =>
+        {
+            if (Interlocked.Exchange(ref checkingDrag, 1) != 0) return;
+            try { await input.ExpireAsync(); } catch { /* Shutdown may interrupt a Windows input call. */ }
+            finally { Volatile.Write(ref checkingDrag, 0); }
+        }, null, 100, 100);
         instance.Use(async (context, next) =>
         {
             var headers = context.Response.Headers;
@@ -103,7 +114,9 @@ public sealed class RemoteServer : IAsyncDisposable
             if (CommandValidation.Error(command) is { } error) return Results.BadRequest(new { error });
             if (CommandValidation.IsInput(command.Action) && !allowInput())
                 return Results.Json(new { error = "Разреши мышь и клавиатуру в окне parallexity на ПК." }, statusCode: 403);
-            var done = await controls.ExecuteAsync(command);
+            var done = CommandValidation.IsInput(command.Action)
+                ? await input.ExecuteAsync(command, context.Request.Cookies["pr_session"]!)
+                : await controls.ExecuteAsync(command);
             return done ? Results.Ok(new { done = true }) : Results.Json(new { error = "Приложение не выполнило команду. Обнови пульт или выбери другой плеер." }, statusCode: 409);
         });
         // Set before accepting connections; port=0 is used only by the local test harness.
@@ -141,6 +154,8 @@ public sealed class RemoteServer : IAsyncDisposable
         .Select(a => a.Address.ToString()).Distinct().ToArray();
     public async ValueTask DisposeAsync()
     {
+        if (dragTimer is not null) { await dragTimer.DisposeAsync(); dragTimer = null; }
+        if (drag is not null) { await drag.StopAsync(); drag = null; }
         if (app is not null) { await app.StopAsync(); await app.DisposeAsync(); app = null; }
     }
 }

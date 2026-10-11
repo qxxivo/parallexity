@@ -6,6 +6,7 @@ namespace PhoneRemote;
 
 internal sealed class FakeControls : IDesktopControls
 {
+    internal Action<RemoteCommand>? Observe { get; set; }
     public int Commands { get; private set; }
     private int volume = 42;
     private bool muted, playing = true;
@@ -20,6 +21,7 @@ internal sealed class FakeControls : IDesktopControls
     {
         Commands++;
         LastCommand = command;
+        Observe?.Invoke(command);
         if (command.Action == "app-volume") appVolume = command.Volume!.Value;
         if (command.Action == "app-mute") appMuted = !appMuted;
         if (command.Action == "volume") volume = command.Volume!.Value;
@@ -35,7 +37,11 @@ internal static class SelfTest
     public static async Task PreviewAsync()
     {
         var trust = new TrustStore(Path.Combine(AppContext.BaseDirectory, "test-data", "preview-" + Guid.NewGuid().ToString("N")));
-        await using var server = new RemoteServer(trust, new FakeControls(), (_, _) => Task.FromResult(true), () => true);
+        var commandLog = Path.Combine(Environment.CurrentDirectory, "test-preview-commands.jsonl");
+        File.WriteAllText(commandLog, "");
+        var logLock = new object();
+        var fake = new FakeControls { Observe = command => { lock (logLock) File.AppendAllText(commandLog, JsonSerializer.Serialize(command) + "\n"); } };
+        await using var server = new RemoteServer(trust, fake, (_, _) => Task.FromResult(true), () => true);
         await server.StartAsync(0, true);
         var url = $"http://127.0.0.1:{server.Port}/#pair={trust.CreatePairingToken()}";
         await File.WriteAllTextAsync(Path.Combine(Environment.CurrentDirectory, "test-preview.json"), JsonSerializer.Serialize(new { url, fake = true }));
@@ -106,6 +112,36 @@ internal static class SelfTest
             try { AppUpdates.ReplaceExecutable(updateFile + ".missing", installFile); throw new Exception("Missing update accepted"); }
             catch (FileNotFoundException) { Check(File.ReadAllBytes(installFile).SequenceEqual(new byte[] { 1, 2, 3 }), "Failed update leaves installed executable intact"); }
             var home = await client.GetAsync("/");
+            using (var iconStream = typeof(MainForm).Assembly.GetManifestResourceStream("PhoneRemote.assets.parallexity.ico")!)
+            using (var icon = new System.Drawing.Icon(iconStream))
+                Check(icon.Width > 0 && icon.Height > 0, "Embedded Windows logo can be loaded as an icon");
+            var dragControls = new FakeControls();
+            var clock = DateTimeOffset.UnixEpoch;
+            var dragPermission = true;
+            var lease = new DragLease(dragControls, _ => dragPermission, () => clock);
+            var gesture = new string('a', 32);
+            var anotherGesture = new string('b', 32);
+            Check(CommandValidation.Error(new("drag-start")) is not null, "Drag requires a bounded gesture ID");
+            Check(CommandValidation.Error(new("drag-move", Dx: int.MinValue, Dy: 0, Drag: gesture)) is not null, "Drag movement rejects extreme integers");
+            Check(NativeInput.Build(new("drag-start", Drag: gesture)).Single().Data.Mouse.Flags == 2 && NativeInput.Build(new("drag-end", Drag: gesture)).Single().Data.Mouse.Flags == 4, "Drag emits separate mouse-down and mouse-up");
+            Check(await lease.ExecuteAsync(new("drag-start", Drag: gesture), "phone1"), "Drag starts for its owner");
+            Check(!await lease.ExecuteAsync(new("drag-start", Drag: anotherGesture), "phone2"), "Second phone cannot take over held mouse");
+            Check(!await lease.ExecuteAsync(new("drag-end", Drag: anotherGesture), "phone1"), "Stale gesture cannot release a different drag");
+            Check(!await lease.ExecuteAsync(new("click"), "phone1"), "Click cannot interfere with held drag");
+            clock = clock.AddMilliseconds(500);
+            Check(await lease.ExecuteAsync(new("drag-move", Dx: 0, Dy: 0, Drag: gesture), "phone1"), "Drag heartbeat renews lease without movement");
+            clock = clock.AddMilliseconds(500); await lease.ExpireAsync();
+            Check(dragControls.LastCommand?.Action == "drag-move", "Renewed drag survives its original expiry");
+            clock = clock.AddMilliseconds(500); await lease.ExpireAsync();
+            Check(dragControls.LastCommand?.Action == "drag-end", "Disconnected drag automatically releases mouse");
+            Check(!await lease.ExecuteAsync(new("drag-move", Dx: 5, Dy: 5, Drag: gesture), "phone1"), "Late drag movement cannot revive expired gesture");
+            Check(await lease.ExecuteAsync(new("drag-end", Drag: gesture), "phone1"), "Repeated drag-end is harmless");
+            await lease.ExecuteAsync(new("drag-start", Drag: anotherGesture), "phone1");
+            dragPermission = false; await lease.ExpireAsync();
+            Check(dragControls.LastCommand?.Action == "drag-end", "Revoking input permission releases held mouse");
+            dragPermission = true; await lease.ExecuteAsync(new("drag-start", Drag: gesture), "phone1");
+            await lease.StopAsync();
+            Check(dragControls.LastCommand?.Action == "drag-end" && !await lease.ExecuteAsync(new("drag-start", Drag: gesture), "phone1"), "Server shutdown releases mouse and prevents new drag");
             Check(home.IsSuccessStatusCode && (await home.Content.ReadAsStringAsync()).Contains("parallexity"), "Embedded mobile page loads");
             Check(home.Headers.Contains("Content-Security-Policy"), "Page has CSP and does not allow external scripts");
             Check((await client.GetAsync("/api/state")).StatusCode == HttpStatusCode.Unauthorized, "Unpaired client cannot read PC state");
@@ -136,6 +172,9 @@ internal static class SelfTest
             before = fake.Commands;
             Check((await Post("/api/command", new { action = "pointer", dx = 5, dy = 2 })).StatusCode == HttpStatusCode.Forbidden && fake.Commands == before, "Trusted device cannot move mouse without host opt-in");
             inputEnabled = true;
+            Check((await Post("/api/command", new { action = "drag-start", drag = gesture })).IsSuccessStatusCode, "Authorized drag reaches input backend");
+            Check((await Post("/api/command", new { action = "drag-move", drag = gesture, dx = 7, dy = -2 })).IsSuccessStatusCode && fake.LastCommand?.Dx == 7, "Drag movement reaches backend without losing coordinates");
+            Check((await Post("/api/command", new { action = "drag-end", drag = gesture })).IsSuccessStatusCode && fake.LastCommand?.Action == "drag-end", "Drag-end releases through authenticated API");
             Check((await Post("/api/command", new { action = "pointer", dx = int.MinValue, dy = 0 })).StatusCode == HttpStatusCode.BadRequest, "Pointer validation handles extreme integers");
             Check((await Post("/api/command", new { action = "key", key = "run-shell" })).StatusCode == HttpStatusCode.BadRequest, "Keyboard whitelist rejects arbitrary keys");
             Check((await Post("/api/command", new { action = "text", text = new string('x', 501) })).StatusCode == HttpStatusCode.BadRequest, "Oversized text is rejected");

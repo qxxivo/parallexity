@@ -7,13 +7,15 @@
     <ImplicitUsings>enable</ImplicitUsings>
     <Nullable>enable</Nullable>
     <ApplicationManifest>app.manifest</ApplicationManifest>
+    <ApplicationIcon>assets\parallexity.ico</ApplicationIcon>
     <AssemblyName>parallexity</AssemblyName>
     <RootNamespace>PhoneRemote</RootNamespace>
-    <Version>0.3.0</Version>
+    <Version>0.4.0</Version>
   </PropertyGroup>
   <ItemGroup>
     <FrameworkReference Include="Microsoft.AspNetCore.App" />
     <PackageReference Include="QRCoder" Version="1.8.0" />
     <EmbeddedResource Include="web\*" />
+    <EmbeddedResource Include="assets\parallexity.ico" />
   </ItemGroup>
 </Project>

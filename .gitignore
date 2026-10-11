@@ -5,6 +5,7 @@ dist/
 *.user
 test-results.json
 test-preview.json
+test-preview-commands.jsonl
 test-data/
 test-*.png
 browser-check.cjs

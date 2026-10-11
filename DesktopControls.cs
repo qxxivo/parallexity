@@ -12,7 +12,7 @@ public record AppAudioState(string Id, string Name, int Volume, bool Muted, bool
 public record RemoteState(string Computer, AudioState Audio, MediaState[] Media, string? MediaError,
     AppAudioState[]? Apps = null, bool InputEnabled = false);
 public record RemoteCommand(string Action, int? Volume = null, string? Session = null,
-    string? App = null, int? Dx = null, int? Dy = null, string? Key = null, string? Text = null);
+    string? App = null, int? Dx = null, int? Dy = null, string? Key = null, string? Text = null, string? Drag = null);
 
 public interface IDesktopControls
 {

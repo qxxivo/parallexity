@@ -2,47 +2,46 @@
 <html lang="ru">
 <head>
   <meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
-  <meta name="theme-color" content="#10141d"><meta name="color-scheme" content="dark">
-  <title>parallexity</title><link rel="icon" href="/icon.svg"><link rel="stylesheet" href="/app.css">
-  <script src="/app.js" defer></script>
+  <meta name="theme-color" content="#121215"><meta name="color-scheme" content="dark">
+  <title>parallexity</title><link rel="icon" href="/icon.svg"><link rel="stylesheet" href="/app.css"><script src="/app.js" defer></script>
 </head>
 <body>
+  <svg class="symbols" aria-hidden="true" xmlns="http://www.w3.org/2000/svg"><defs>
+    <symbol id="i-play" viewBox="0 0 24 24"><path d="m9 5 11 7-11 7z"/></symbol>
+    <symbol id="i-pause" viewBox="0 0 24 24"><path d="M8 5h3v14H8zm7 0h3v14h-3z"/></symbol>
+    <symbol id="i-next" viewBox="0 0 24 24"><path d="m5 5 10 7-10 7zM17 5h2v14h-2z"/></symbol>
+    <symbol id="i-previous" viewBox="0 0 24 24"><path d="m19 5-10 7 10 7zM5 5h2v14H5z"/></symbol>
+    <symbol id="i-sound" viewBox="0 0 24 24"><path d="M4 9v6h4l5 4V5L8 9z"/><path class="stroke" d="M17 8a6 6 0 0 1 0 8m3-11a10 10 0 0 1 0 14"/></symbol>
+    <symbol id="i-cursor" viewBox="0 0 24 24"><path class="stroke" d="m5 3 14 10-7 1-3 7z"/></symbol>
+    <symbol id="i-music" viewBox="0 0 24 24"><path class="stroke" d="M9 17V5l11-2v12M9 8l11-2"/><ellipse cx="6" cy="18" rx="3" ry="2"/><ellipse cx="17" cy="16" rx="3" ry="2"/></symbol>
+  </defs></svg>
   <main>
-    <header><div class="brand"><img src="/icon.svg" alt="" width="42" height="42"><div><span class="eyebrow">parallexity</span><h1>Твой ПК. Под рукой.</h1></div></div><div id="connection" class="connection"><span></span><b>Подключаемся</b></div></header>
-    <section id="pairing" class="card hidden">
-      <span class="eyebrow">ПЕРВОЕ ПОДКЛЮЧЕНИЕ</span><h2>Познакомим устройства</h2>
-      <p>Назови свой телефон. Затем подтверди подключение в окне parallexity на компьютере.</p>
-      <form id="pair-form"><label for="device-name">Имя телефона</label><input id="device-name" maxlength="40" autocomplete="off" value="Мой телефон" required><button id="pair-button" class="primary" type="submit">Подключить к ПК <span>↗</span></button></form>
-      <p id="pair-message" role="status" aria-live="polite"></p>
-    </section>
-    <section id="unpaired" class="card hidden"><span class="eyebrow">НУЖНО ПОДКЛЮЧЕНИЕ</span><h2>Начни с компьютера</h2><p>Открой parallexity на ПК, нажми «Новый QR-код» и отсканируй его камерой телефона.</p><button id="retry" class="secondary">Проверить подключение</button></section>
+    <header><a class="brand" href="/" aria-label="parallexity — главная"><img src="/icon.svg" alt="" width="34" height="34"><span>parallexity<span class="brand-dot">.</span></span></a><div id="connection" class="connection" role="status"><span></span><b>Подключаемся</b></div></header>
+    <section id="pairing" class="card hidden"><span class="eyebrow">ДОБРО ПОЖАЛОВАТЬ</span><h1>Телефон становится пультом.</h1><p>Назови устройство и подтверди подключение в окне parallexity на компьютере.</p><form id="pair-form"><label for="device-name">Имя телефона</label><input id="device-name" maxlength="40" autocomplete="off" value="Мой телефон" required><button id="pair-button" class="primary" type="submit">Подключить к ПК <span>↗</span></button></form><p id="pair-message" role="status" aria-live="polite"></p></section>
+    <section id="unpaired" class="card hidden"><span class="eyebrow">НАЧНИ С КОМПЬЮТЕРА</span><h1>Твой ПК.<br>Под рукой.</h1><p>Открой parallexity на ПК и отсканируй QR-код камерой телефона.</p><button id="retry" class="primary">Проверить подключение</button></section>
     <div id="remote" class="hidden">
-      <nav class="tabs" aria-label="Разделы пульта"><button class="tab active" data-panel="media-panel" aria-pressed="true">Медиа</button><button class="tab" data-panel="sound-panel" aria-pressed="false">Звук</button><button class="tab" data-panel="input-panel" aria-pressed="false">Управление</button></nav>
       <div id="media-panel" class="tab-panel">
-      <section class="card media-card">
-        <div class="section-heading"><span class="eyebrow">СЕЙЧАС ИГРАЕТ</span><span id="media-app" class="tag">Медиа</span></div>
-        <label class="sr-only" for="session">Выбрать плеер</label><select id="session" aria-label="Выбрать плеер"></select>
-        <div class="track"><div class="artwork" aria-hidden="true"><span>♫</span><i></i><i></i><i></i><i></i><i></i></div><div class="track-copy"><h2 id="title">Открой музыку или видео</h2><p id="artist">Плееры появятся здесь автоматически</p></div></div>
-        <div class="transport"><button id="previous" aria-label="Предыдущий трек" class="round secondary">⏮</button><button id="play" aria-label="Воспроизвести" class="round play">▶</button><button id="next" aria-label="Следующий трек" class="round secondary">⏭</button></div>
-        <p id="media-note" class="hint">Показываем плееры, которыми разрешает управлять Windows.</p>
-      </section>
-      <section class="card volume-card"><div class="section-heading"><span class="eyebrow">ГРОМКОСТЬ КОМПЬЮТЕРА</span><strong id="volume-number">—</strong></div>
-        <label class="sr-only" for="volume">Громкость компьютера</label><input id="volume" type="range" min="0" max="100" value="0" aria-label="Громкость компьютера">
-        <div class="volume-bottom"><button id="mute" class="secondary">♬ <span>Выключить звук</span></button><span id="audio-note" class="hint">Общий звук ПК</span></div>
-      </section>
+        <div class="page-heading"><span class="eyebrow">ТВОЙ ПУЛЬТ</span><h1>Медиа<span class="heading-dot">.</span></h1><p>Плейлист на ПК. Управление здесь.</p></div>
+        <section class="card media-card"><div class="section-heading"><span class="eyebrow">СЕЙЧАС ИГРАЕТ</span><span id="media-app" class="tag">Медиа</span></div><label class="sr-only" for="session">Выбрать плеер</label><select id="session" aria-label="Выбрать плеер"></select>
+          <div class="artwork" aria-hidden="true"><div class="record"><div class="record-center"><svg><use href="#i-music"/></svg></div></div><span class="artwork-mark">P / 01</span></div>
+          <div class="track-copy"><h2 id="title">Открой музыку или видео</h2><p id="artist">Плееры появятся автоматически</p></div>
+          <div class="transport"><button id="previous" aria-label="Предыдущий трек" class="round secondary"><svg><use href="#i-previous"/></svg></button><button id="play" aria-label="Воспроизвести" class="round play"><svg><use href="#i-play"/></svg></button><button id="next" aria-label="Следующий трек" class="round secondary"><svg><use href="#i-next"/></svg></button></div><p id="media-note" class="hint">Управление доступными плеерами Windows.</p>
+        </section>
+        <section class="card volume-card"><div class="section-heading"><span class="eyebrow">ГРОМКОСТЬ ПК</span><strong id="volume-number">—</strong></div><label class="sr-only" for="volume">Громкость компьютера</label><input id="volume" type="range" min="0" max="100" value="0" aria-label="Громкость компьютера"><div class="volume-bottom"><button id="mute" class="secondary"><svg><use href="#i-sound"/></svg><span>Выключить звук</span></button><span id="audio-note" class="hint">Общий звук ПК</span></div></section>
       </div>
-      <div id="sound-panel" class="tab-panel hidden"><section class="card"><span class="eyebrow">МИКШЕР ПРИЛОЖЕНИЙ</span><h2>Каждому — свой звук</h2><p class="hint">Приложения появятся, когда начнут воспроизводить звук. Показываем сессии основного устройства вывода.</p><div id="app-mixer"></div><p id="mixer-empty" class="hint">Пока нет приложений со звуком.</p></section></div>
-      <div id="input-panel" class="tab-panel hidden"><section class="card"><div class="section-heading"><span class="eyebrow">МЫШЬ И КЛАВИАТУРА</span><span id="input-status" class="tag">Выключено</span></div><p id="input-note" class="hint">Разреши мышь и клавиатуру в окне программы на ПК.</p>
-        <label class="precision"><input id="precise" type="checkbox"> Точный режим — медленнее и аккуратнее</label>
-        <div id="touchpad" class="touchpad" role="application" aria-label="Тачпад"><span>Двигай пальцем — перемещай курсор</span><small>Касание — клик · два пальца — прокрутка</small></div>
-        <div class="mouse-buttons"><button data-input="click" class="secondary">Левый клик</button><button data-input="right-click" class="secondary">Правый клик</button><button data-input="double-click" class="secondary">Двойной клик</button></div>
-        <div class="key-grid"><button class="secondary" data-key="escape">Esc</button><button class="secondary" data-key="tab">Tab</button><button class="secondary" data-key="enter">Enter</button><button class="secondary" data-key="backspace">⌫</button><button class="secondary" data-key="left">←</button><button class="secondary" data-key="up">↑</button><button class="secondary" data-key="down">↓</button><button class="secondary" data-key="right">→</button></div>
-        <div class="mouse-buttons"><button class="secondary" data-scroll="120">Прокрутить ↑</button><button class="secondary" data-scroll="-120">Прокрутить ↓</button></div>
-      </section><section class="card"><span class="eyebrow">ВВОД ТЕКСТА</span><h2>Печатай с телефона</h2><p class="hint">Сначала выбери поле на ПК. Текст будет введён в активное окно; переносы строк нажимают Enter.</p><label class="sr-only" for="remote-text">Текст для ПК</label><textarea id="remote-text" maxlength="500" placeholder="Напиши текст…" rows="3"></textarea><button id="send-text" class="primary">Ввести на ПК</button><div class="mouse-buttons"><button class="secondary" data-key="select-all">Выделить всё</button><button class="secondary" data-key="copy">Копировать</button><button class="secondary" data-key="paste">Вставить</button><button class="secondary" data-key="undo">Отменить</button></div></section></div>
-      <section id="reconnect" class="card compact hidden"><h2>Возвращаем соединение</h2><p>Проверь, что ПК включён и программа работает. Повторяем подключение автоматически.</p><button id="reconnect-button" class="secondary">Попробовать сейчас</button></section>
+      <div id="sound-panel" class="tab-panel hidden"><div class="page-heading"><span class="eyebrow">ВСЁ В БАЛАНСЕ</span><h1>Звук<span class="heading-dot">.</span></h1><p>Музыку погромче. Остальное потише.</p></div><section class="card mixer-card"><div class="section-heading"><span class="eyebrow">ПРИЛОЖЕНИЯ</span><span class="tag neutral">Микшер</span></div><div id="app-mixer"></div><p id="mixer-empty" class="empty-state">Открой музыку или видео на ПК.<br>Приложения со звуком появятся здесь.</p></section></div>
+      <div id="input-panel" class="tab-panel hidden"><div class="page-heading"><span class="eyebrow">БЛИЖЕ К КОМПЬЮТЕРУ</span><h1>Управление<span class="heading-dot">.</span></h1><p>Твой телефон — мышь и клавиатура.</p></div>
+        <section class="card pad-card"><div class="section-heading"><span class="eyebrow">ТАЧПАД</span><span id="input-status" class="tag">Выключено</span></div><p id="input-note" class="hint">Разреши мышь и клавиатуру в окне программы на ПК.</p>
+          <div id="touchpad" class="touchpad" role="application" aria-label="Тачпад: касание — клик, удержание — перетаскивание, два пальца — прокрутка"><svg aria-hidden="true"><use href="#i-cursor"/></svg><span id="pad-label">Двигай пальцем</span><small id="pad-hint">Зажми и двигай — перетаскивание</small><span class="pad-corner top-left"></span><span class="pad-corner bottom-right"></span></div>
+          <div class="mouse-buttons clicks"><button data-input="click" class="secondary">Левый клик</button><button data-input="right-click" class="secondary">Правый клик</button></div>
+          <div class="pad-bottom"><span class="hint">Два пальца — прокрутка</span><label class="precision"><input id="precise" type="checkbox"><span>Точно</span></label></div>
+        </section>
+        <details class="card keyboard-card"><summary><span>Клавиши и текст</span><span class="summary-plus">+</span></summary><div class="key-grid"><button class="secondary" data-key="escape">Esc</button><button class="secondary" data-key="tab">Tab</button><button class="secondary" data-key="enter">Enter</button><button class="secondary" data-key="backspace" aria-label="Удалить символ">⌫</button><button class="secondary" data-key="left" aria-label="Стрелка влево">←</button><button class="secondary" data-key="up" aria-label="Стрелка вверх">↑</button><button class="secondary" data-key="down" aria-label="Стрелка вниз">↓</button><button class="secondary" data-key="right" aria-label="Стрелка вправо">→</button></div><div class="mouse-buttons"><button class="secondary" data-input="double-click">Двойной клик</button><button class="secondary" data-scroll="120">Прокрутить ↑</button><button class="secondary" data-scroll="-120">Прокрутить ↓</button></div><label for="remote-text" class="text-label">Текст для компьютера</label><textarea id="remote-text" maxlength="500" placeholder="Сначала выбери поле на ПК…" rows="3"></textarea><button id="send-text" class="primary">Ввести на ПК <span>↗</span></button><div class="mouse-buttons shortcuts"><button class="secondary" data-key="select-all">Выделить</button><button class="secondary" data-key="copy">Копировать</button><button class="secondary" data-key="paste">Вставить</button><button class="secondary" data-key="undo">Отменить</button></div><p class="hint">Ввод в активное окно ПК. Перенос строки нажимает Enter.</p></details>
+      </div>
+      <section id="reconnect" class="card compact hidden"><h2>Возвращаем соединение</h2><p>Проверь, что ПК включён и пульт запущен.</p><button id="reconnect-button" class="secondary">Попробовать сейчас</button></section>
+      <nav class="tabs" aria-label="Разделы пульта"><button class="tab active" data-panel="media-panel" aria-pressed="true"><svg aria-hidden="true"><use href="#i-music"/></svg><span>Медиа</span></button><button class="tab" data-panel="sound-panel" aria-pressed="false"><svg aria-hidden="true"><use href="#i-sound"/></svg><span>Звук</span></button><button class="tab" data-panel="input-panel" aria-pressed="false"><svg aria-hidden="true"><use href="#i-cursor"/></svg><span>Управление</span></button></nav>
     </div>
-    <div id="toast" role="status" aria-live="polite"></div>
-    <footer><span class="local-dot"></span><span>Напрямую в домашней сети</span><span id="computer"></span></footer>
+    <div id="toast" role="status" aria-live="polite"></div><footer><span class="local-dot"></span><span>В твоей домашней сети</span><span id="computer"></span></footer>
   </main>
 </body>
 </html>
