@@ -24,13 +24,18 @@ public sealed class RemoteServer : IAsyncDisposable
     private System.Threading.Timer? dragTimer;
     private PcTimer? pcTimer;
     private readonly BrowserBridge browser;
+    private readonly ViewingMode viewing;
+    private readonly Func<DateTimeOffset>? timerClock;
+    internal Task TickTimerAsync() => pcTimer?.TickAsync() ?? Task.CompletedTask;
+    public bool ViewingEnabled => viewing.Enabled;
+    public bool SetViewingMode(bool enabled) => viewing.Set(enabled);
     internal string CreateBrowserCode()=>browser.CreateCode(Port);
     internal void DisconnectBrowser()=>browser.Disconnect();
     public int Port { get; private set; }
     public string[] Addresses => NetworkAddresses().Select(ip => $"http://{ip}:{Port}").ToArray();
 
-    public RemoteServer(TrustStore trust, IDesktopControls controls, Func<string, string, Task<bool>> approve, Func<bool>? allowInput = null)
-    { this.trust = trust; this.controls = controls; this.approve = approve; this.allowInput = allowInput ?? (() => false); browser=new(file:Path.Combine(trust.Folder,"browser-bridge.txt")); }
+    public RemoteServer(TrustStore trust, IDesktopControls controls, Func<string, string, Task<bool>> approve, Func<bool>? allowInput = null, ViewingMode? viewingMode = null, Func<DateTimeOffset>? timerClock = null)
+    { this.trust = trust; this.controls = controls; this.approve = approve; this.allowInput = allowInput ?? (() => false); browser=new(file:Path.Combine(trust.Folder,"browser-bridge.txt")); viewing=viewingMode??new(); this.timerClock=timerClock; }
 
     public async Task StartAsync(int port = 8765, bool loopbackOnly = false)
     {
@@ -45,14 +50,19 @@ public sealed class RemoteServer : IAsyncDisposable
         });
         var instance = builder.Build();
         app = instance;
-        pcTimer = new PcTimer(trust.IsTrusted, (action,session)=>action=="pause" && session=="browser" ? browser.ExecuteAsync(action) : controls.ExecuteAsync(new(action,Session:session)));
+        pcTimer = new PcTimer(trust.IsTrusted, async (action,session)=>
+        {
+            // Finishing a viewing timer restores normal idle behavior before its action.
+            if(!viewing.Set(false))return false;
+            return action=="pause" && session=="browser" ? await browser.ExecuteAsync(action) : await ExecuteDesktopAsync(new(action,Session:session));
+        }, timerClock);
         var input = new DragLease(controls, token => allowInput() && trust.IsTrusted(token));
         drag = input;
         var checkingDrag = 0;
         dragTimer = new System.Threading.Timer(async _ =>
         {
             if (Interlocked.Exchange(ref checkingDrag, 1) != 0) return;
-            try { await input.ExpireAsync(); } catch { /* Shutdown may interrupt a Windows input call. */ }
+            try { viewing.CheckTrust(trust.IsTrusted); await input.ExpireAsync(); } catch { /* Shutdown may interrupt a Windows input call. */ }
             finally { Volatile.Write(ref checkingDrag, 0); }
         }, null, 100, 100);
         instance.Use(async (context, next) =>
@@ -124,7 +134,16 @@ public sealed class RemoteServer : IAsyncDisposable
         instance.MapGet("/api/state", async (HttpContext context) =>
         {
             if (!trust.IsTrusted(context.Request.Cookies["pr_session"])) return Results.Unauthorized();
-            return Results.Ok((await controls.ReadAsync()) with { InputEnabled = allowInput(), Timer=pcTimer.State, Browser=browser.State });
+            viewing.CheckTrust(trust.IsTrusted);
+            return Results.Ok((await controls.ReadAsync()) with { InputEnabled = allowInput(), Timer=pcTimer.State, Browser=browser.State, ViewingMode=viewing.Enabled });
+        });
+        instance.MapPost("/api/viewing",async(HttpContext context)=>
+        {
+            var token=context.Request.Cookies["pr_session"];
+            if(!trust.IsTrusted(token))return Results.Unauthorized();
+            var request=await context.Request.ReadFromJsonAsync<ViewingModeRequest>();
+            if(request?.Enabled is not bool enabled)return Results.BadRequest();
+            return viewing.Set(enabled,token)?Results.Ok(new{done=true}):Results.Json(new{error="Windows не разрешила режим просмотра. Попробуй ещё раз."},statusCode:409);
         });
         instance.MapPost("/api/timer",async(HttpContext context)=>
         {
@@ -166,13 +185,19 @@ public sealed class RemoteServer : IAsyncDisposable
                 return Results.Json(new { error = "Разреши мышь и клавиатуру в окне parallexity на ПК." }, statusCode: 403);
             var done = CommandValidation.IsInput(command.Action)
                 ? await input.ExecuteAsync(command, context.Request.Cookies["pr_session"]!)
-                : await controls.ExecuteAsync(command);
+                : await ExecuteDesktopAsync(command);
             return done ? Results.Ok(new { done = true }) : Results.Json(new { error = "Приложение не выполнило команду. Обнови пульт или выбери другой плеер." }, statusCode: 409);
         });
         // Set before accepting connections; port=0 is used only by the local test harness.
         Port = port;
         await instance.StartAsync();
         if (port == 0) Port = new Uri(instance.Urls.First()).Port;
+    }
+
+    private Task<bool> ExecuteDesktopAsync(RemoteCommand command)
+    {
+        if(command.Action=="display-off"&&!viewing.Set(false))return Task.FromResult(false);
+        return controls.ExecuteAsync(command);
     }
 
     private bool AllowPairAttempt(string address)
@@ -205,6 +230,7 @@ public sealed class RemoteServer : IAsyncDisposable
     public async ValueTask DisposeAsync()
     {
         browser.Stop();
+        viewing.Set(false);
         if(pcTimer is not null){await pcTimer.DisposeAsync();pcTimer=null;}
         if (dragTimer is not null) { await dragTimer.DisposeAsync(); dragTimer = null; }
         if (drag is not null) { await drag.StopAsync(); drag = null; }

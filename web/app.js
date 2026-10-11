@@ -40,6 +40,7 @@
     document.querySelectorAll('#app-mixer button,#app-mixer input,[data-input],[data-key],[data-scroll]').forEach(node => node.disabled = true);
     $('touchpad').classList.add('disabled');
     $('timer-start').disabled = true; $('timer-cancel').disabled = true;
+    $('viewing-toggle').disabled = true;
     $('browser-actions').querySelectorAll?.('button').forEach(button => button.disabled = true);
     cancelGesture();
   }
@@ -114,9 +115,14 @@
       wakeRequested = false;
     }
   }
-  const browserLabels = {'play':'Воспроизвести','pause':'Пауза','seek-back':'−10 сек','seek-forward':'+10 сек','skip-intro':'Пропустить заставку','skip-ad':'Пропустить рекламу','next-episode':'Следующая серия'};
+  const browserLabels = {'play':'Воспроизвести','pause':'Пауза','seek-back':'−10 сек','seek-forward':'+10 сек','skip-intro':'Пропустить заставку','skip-ad':'Пропустить рекламу','next-episode':'Следующая серия','fullscreen':'Полный экран окна','exit-fullscreen':'Выйти из полного экрана'};
   let extraPending = false;
   function renderExtras() {
+    $('viewing-toggle').disabled = !connected || extraPending;
+    $('viewing-toggle').setAttribute('aria-pressed', String(!!state.viewingMode));
+    $('viewing-toggle').classList.toggle('active', !!state.viewingMode);
+    $('viewing-state').textContent = state.viewingMode ? 'Включён' : 'Выключен';
+    $('viewing-hint').textContent = state.viewingMode ? 'ПК остаётся активным. Таймер или «Погасить экран» выключит этот режим.' : 'Включи, чтобы ПК и экран не засыпали от бездействия во время просмотра.';
     const browser = state.browser;
     $('browser-card').classList.toggle('hidden', !browser?.connected);
     $('browser-title').textContent = browser?.title || '';
@@ -155,6 +161,7 @@
     void extraCommand('/api/timer', {minutes:Number($('timer-minutes').value), action, session});
   });
   $('timer-cancel').addEventListener('click', () => extraCommand('/api/timer', {minutes:0,action:'cancel'}));
+  $('viewing-toggle').addEventListener('click', () => extraCommand('/api/viewing', {enabled:!state?.viewingMode}));
   function reconnectNow() {
     pollFailures = 0; clearTimeout(pollTimer);
     if (polling) { wakeRequested = true; pollAbort?.abort(); }

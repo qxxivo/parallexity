@@ -8,7 +8,7 @@ public record BrowserReport(string Title, string[] Actions, string? CommandId=nu
 public record BrowserInstruction(string Id,string Action,string? Generation);
 internal sealed class BrowserBridge
 {
-    internal static readonly string[] AllowedActions={"play","pause","seek-back","seek-forward","skip-intro","skip-ad","next-episode"};
+    internal static readonly string[] AllowedActions={"play","pause","seek-back","seek-forward","skip-intro","skip-ad","next-episode","fullscreen","exit-fullscreen"};
     private readonly object sync=new();
     private readonly Func<DateTimeOffset> now;
     private string? code,secretHash;

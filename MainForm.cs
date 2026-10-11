@@ -57,7 +57,7 @@ public sealed class MainForm : Form
         using (var iconStream = typeof(MainForm).Assembly.GetManifestResourceStream("PhoneRemote.assets.parallexity.ico")!)
         using (var logo = new Icon(iconStream, 64, 64)) Icon = (Icon)logo.Clone();
         trust = new(Path.Combine(AppContext.BaseDirectory, designPreview ? "test-data/desktop-" + Guid.NewGuid().ToString("N") : "data"));
-        server = new(trust, designPreview ? new FakeControls() : new DesktopControls(), ApproveAsync, () => inputEnabled);
+        server = new(trust, designPreview ? new FakeControls() : new DesktopControls(), ApproveAsync, () => inputEnabled, designPreview ? new ViewingMode(_=>true) : null);
         trust.Changed += () => { if (IsHandleCreated && !IsDisposed) BeginInvoke(UpdateDevices); };
 
         var root = new TableLayoutPanel { Dock = DockStyle.Fill, Padding = new(24), ColumnCount = 2, RowCount = 4 };
@@ -139,6 +139,10 @@ public sealed class MainForm : Form
         var menu = new ContextMenuStrip();
         menu.Items.Add("Открыть parallexity", null, (_, _) => Restore());
         menu.Items.Add("Расширение браузера…",null,(_,_)=>ShowBrowserSetup());
+        var viewingMenu=menu.Items.Add("Режим просмотра",null,(_,_)=>
+        {
+            if(!server.SetViewingMode(!server.ViewingEnabled))MessageBox.Show(this,"Windows не разрешила режим просмотра. Попробуй ещё раз.","Режим просмотра");
+        });
         updateMenu = menu.Items.Add("Проверить обновления", null, async (_, _) => await UpdateAsync());
         menu.Items.Add("Перезапустить пульт", null, (_, _) => Restart());
         menu.Items.Add("Выход", null, (_, _) => { exitRequested = true; Close(); });
@@ -147,6 +151,7 @@ public sealed class MainForm : Form
         Resize += (_, _) => { if (WindowState == FormWindowState.Minimized) Hide(); };
         timer.Tick += (_, _) =>
         {
+            ((ToolStripMenuItem)viewingMenu).Checked=server.ViewingEnabled;
             if (instance.OpenRequested()) Restore();
             if (started && !stopping && !updating && ++networkCheckTicks % 15 == 0) RefreshAddresses();
             var seconds = Math.Max(0, (int)(expires - DateTimeOffset.UtcNow).TotalSeconds);

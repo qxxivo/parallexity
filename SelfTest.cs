@@ -41,7 +41,7 @@ internal static class SelfTest
         File.WriteAllText(commandLog, "");
         var logLock = new object();
         var fake = new FakeControls { Observe = command => { lock (logLock) File.AppendAllText(commandLog, JsonSerializer.Serialize(command) + "\n"); } };
-        await using var server = new RemoteServer(trust, fake, (_, _) => Task.FromResult(true), () => true);
+        await using var server = new RemoteServer(trust, fake, (_, _) => Task.FromResult(true), () => true, new ViewingMode(_=>true));
         await server.StartAsync(port, true);
         var url = $"http://127.0.0.1:{server.Port}/#pair={trust.CreatePairingToken()}";
         await File.WriteAllTextAsync(Path.Combine(Environment.CurrentDirectory, "test-preview.json"), JsonSerializer.Serialize(new { url, fake = true }));
@@ -58,7 +58,8 @@ internal static class SelfTest
             var fake = new FakeControls();
             var approved = true;
             var inputEnabled = false;
-            await using var server = new RemoteServer(trust, fake, (_, _) => Task.FromResult(approved), () => inputEnabled);
+            var serverClock=DateTimeOffset.UtcNow;
+            await using var server = new RemoteServer(trust, fake, (_, _) => Task.FromResult(approved), () => inputEnabled, new ViewingMode(_=>true), ()=>serverClock);
             await server.StartAsync(0, true);
             var baseUrl = $"http://127.0.0.1:{server.Port}";
             var cookies = new CookieContainer();
@@ -103,6 +104,17 @@ internal static class SelfTest
             var startupPath = Path.Combine(folder, "folder with spaces", "parallexity.exe");
             Check(DesktopStartup.Command(startupPath) == "\"" + Path.GetFullPath(startupPath) + "\" --startup", "Autostart quotes executable path and uses tray flag");
             Check(AppUpdates.ParseRelease(ReleaseJson()).Version == new Version(0, 3, 0), "Stable update metadata is parsed");
+            var powerCalls=new List<bool>();
+            using(var viewingFixture=new ViewingMode(value=>{powerCalls.Add(value);return true;}))
+            {
+                Check(!viewingFixture.Enabled,"Viewing mode starts disabled");
+                Check(viewingFixture.Set(true,"owner")&&viewingFixture.Set(true,"owner")&&powerCalls.Count==1,"Repeated enable does not duplicate power requests");
+                viewingFixture.CheckTrust(_=>true);Check(viewingFixture.Enabled,"Trusted device remains active without phone heartbeat");
+                viewingFixture.CheckTrust(_=>false);Check(!viewingFixture.Enabled&&powerCalls.SequenceEqual(new[]{true,false}),"Revocation releases viewing requests");
+                viewingFixture.Set(true);viewingFixture.Dispose();Check(!viewingFixture.Enabled&&!viewingFixture.Set(true),"Disposal releases requests and prevents reactivation");
+            }
+            using(var failingViewing=new ViewingMode(_=>false))Check(!failingViewing.Set(true)&&!failingViewing.Enabled,"Failed power request is not reported as enabled");
+            Check(System.Runtime.InteropServices.Marshal.SizeOf<ViewingMode.ReasonContext>()==32,"Power request reason context matches x64 ABI");
             var timerClock=DateTimeOffset.UtcNow;var timerCalls=0;var timerTrusted=true;
             await using(var timerFixture=new PcTimer(_=>timerTrusted,(_,_)=>{timerCalls++;return Task.FromResult(true);},()=>timerClock))
             {
@@ -222,6 +234,7 @@ internal static class SelfTest
             Check(home.IsSuccessStatusCode && (await home.Content.ReadAsStringAsync()).Contains("parallexity"), "Embedded mobile page loads");
             Check(home.Headers.Contains("Content-Security-Policy"), "Page has CSP and does not allow external scripts");
             Check((await client.GetAsync("/api/state")).StatusCode == HttpStatusCode.Unauthorized, "Unpaired client cannot read PC state");
+            Check((await Post("/api/viewing",new{enabled=true})).StatusCode==HttpStatusCode.Unauthorized&&!server.ViewingEnabled,"Unpaired device cannot enable viewing mode");
             Check((await Post("/api/command", new { action = "mute" })).StatusCode == HttpStatusCode.Unauthorized && fake.Commands == 0, "Unpaired client cannot control PC");
             Check((await Post("/api/command", new { action = "display-off" })).StatusCode == HttpStatusCode.Unauthorized && fake.Commands == 0, "Unpaired client cannot turn off display");
             Check((await Post("/api/timer",new{minutes=15,action="display-off"})).StatusCode==HttpStatusCode.Unauthorized,"Unpaired phone cannot start timer");
@@ -251,6 +264,14 @@ internal static class SelfTest
             Check((await Post("/api/pair", new { token, name = "Phone" })).IsSuccessStatusCode, "Pairing approved on host grants a session");
             Check((await Post("/api/pair", new { token, name = "Phone" })).StatusCode == HttpStatusCode.Forbidden, "Pairing token cannot be replayed");
             Check((await client.GetAsync("/api/state")).IsSuccessStatusCode, "Same-origin GET works without Origin header");
+            Check((await Post("/api/viewing",new{enabled=true},"https://attacker.invalid")).StatusCode==HttpStatusCode.Forbidden&&!server.ViewingEnabled,"Foreign origin cannot enable viewing mode");
+            Check((await Post("/api/viewing",new{})).StatusCode==HttpStatusCode.BadRequest,"Viewing mode requires an explicit state");
+            Check((await Post("/api/viewing",new{enabled=true})).IsSuccessStatusCode&&server.ViewingEnabled&&!inputEnabled,"Trusted phone enables viewing without keyboard access");
+            Check((await client.GetFromJsonAsync<RemoteState>("/api/state"))?.ViewingMode==true,"Viewing state is visible on phone");
+            await Post("/api/timer",new{minutes=1,action="display-off"});serverClock=serverClock.AddMinutes(1);await server.TickTimerAsync();
+            Check(!server.ViewingEnabled&&fake.LastCommand?.Action=="display-off","Screen timer releases viewing mode before executing");
+            await Post("/api/viewing",new{enabled=true});await Post("/api/timer",new{minutes=1,action="pause",session="demo-music"});serverClock=serverClock.AddMinutes(1);await server.TickTimerAsync();
+            Check(!server.ViewingEnabled&&fake.LastCommand?.Action=="pause","Pause timer also restores normal idle behavior");
             Check((await Post("/api/timer",new{minutes=15,action="display-off"})).IsSuccessStatusCode,"Trusted phone can arm PC timer");
             var timerState=await client.GetFromJsonAsync<RemoteState>("/api/state");
             Check(timerState?.Timer?.Remaining is >0 and <=900&&timerState.Browser?.Actions.Contains("skip-intro")==true,"Phone state contains PC countdown and reported browser actions");
@@ -266,7 +287,8 @@ internal static class SelfTest
             var state = await client.GetFromJsonAsync<RemoteState>("/api/state");
             Check(state?.Audio.Volume == 73, "Subsequent state reflects command");
             Check((await Post("/api/command", new { action = "pause", session = "demo-music" })).IsSuccessStatusCode, "Media control reaches selected session");
-            Check((await Post("/api/command", new { action = "display-off" })).IsSuccessStatusCode && fake.LastCommand?.Action == "display-off" && !inputEnabled, "Trusted phone can turn off display without enabling keyboard or mouse (fake backend)");
+            await Post("/api/viewing",new{enabled=true});
+            Check((await Post("/api/command", new { action = "display-off" })).IsSuccessStatusCode && fake.LastCommand?.Action == "display-off" && !inputEnabled && !server.ViewingEnabled, "Display-off releases viewing mode without enabling keyboard or mouse (fake backend)");
             before = fake.Commands;
             Check((await Post("/api/command", new { action = "pointer", dx = 5, dy = 2 })).StatusCode == HttpStatusCode.Forbidden && fake.Commands == before, "Trusted device cannot move mouse without host opt-in");
             inputEnabled = true;
