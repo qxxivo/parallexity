@@ -124,6 +124,9 @@ internal static class SelfTest
             using (var restarted = new DesktopInstance(instanceName))
                 Check(restarted.Acquire(0), "Closing previous instance allows restart");
             var startupPath = Path.Combine(folder, "folder with spaces", "parallexity.exe");
+            var extensionResources=typeof(MainForm).Assembly.GetManifestResourceNames();
+            foreach(var file in new[]{"manifest.json","background.js","content.js","player.js","popup.html","popup.js","popup.css","icon.png"})
+                Check(extensionResources.Contains("PhoneRemote.browser-extension."+file),"Bundled extension includes "+file);
             Check(DesktopStartup.Command(startupPath) == "\"" + Path.GetFullPath(startupPath) + "\" --startup", "Autostart quotes executable path and uses tray flag");
             Check(AppUpdates.ParseRelease(ReleaseJson()).Version == new Version(0, 3, 0), "Stable update metadata is parsed");
             var powerCalls=new List<bool>();

@@ -10,13 +10,14 @@
     <ApplicationIcon>assets\parallexity.ico</ApplicationIcon>
     <AssemblyName>parallexity</AssemblyName>
     <RootNamespace>PhoneRemote</RootNamespace>
-    <Version>0.8.1</Version>
+    <Version>0.8.2</Version>
     <EnableCompressionInSingleFile>true</EnableCompressionInSingleFile>
   </PropertyGroup>
   <ItemGroup>
     <FrameworkReference Include="Microsoft.AspNetCore.App" />
     <PackageReference Include="QRCoder" Version="1.8.0" />
     <EmbeddedResource Include="web\*" />
+    <EmbeddedResource Include="browser-extension\*" LogicalName="PhoneRemote.browser-extension.%(Filename)%(Extension)" />
     <EmbeddedResource Include="assets\parallexity.ico" />
   </ItemGroup>
 </Project>

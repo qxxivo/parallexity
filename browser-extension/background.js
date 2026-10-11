@@ -11,6 +11,7 @@ chrome.runtime.onMessage.addListener((message,sender,reply)=>{
  if(sender.id!==chrome.runtime.id)return;
  if(message.kind==='is-target'){chrome.storage.local.get('target').then(({target})=>reply(target===sender.tab?.id&&!sender.tab?.incognito));return true;}
  if(message.kind==='stop'){chrome.storage.local.remove(['target','tabSharing']).then(()=>{newPage();void sync();reply({done:true});});return true;}
+ if(message.kind==='connect-tab'){chrome.storage.local.get('bridge').then(async({bridge})=>reply({done:!!bridge&&await connectTab(message.tabId)})).catch(()=>reply({done:false}));return true;}
  if(message.kind==='wake'){wake();reply({done:true});return;}
  if(message.kind!=='report'||!sender.tab?.id)return;
  handle(message,sender).then(()=>reply({done:true})).catch(()=>reply({done:false}));return true;
@@ -67,8 +68,31 @@ async function manage(command,catalog){
  const tab=await chrome.tabs.get(command.tabId),current=await chrome.storage.local.get('tabSharing');
  if(!eligible(tab)||!current.tabSharing||command.generation!==generation)return false;
  if(command.action==='focus-tab'){await chrome.tabs.update(tab.id,{active:true});const latest=await chrome.storage.local.get('tabSharing');if(!latest.tabSharing||command.generation!==generation)return false;await chrome.windows.update(tab.windowId,{focused:true});return true;}
- await chrome.storage.local.set({target:tab.id});newPage();
- await chrome.scripting.executeScript({target:{tabId:tab.id,allFrames:true},files:['player.js','content.js']}).catch(()=>{});return true;
+ return await connectTab(tab.id);
+}
+async function connectTab(tabId){
+ const tab=await chrome.tabs.get(tabId);if(!eligible(tab))return false;
+ await chrome.storage.local.set({target:tabId});newPage();
+ const epoch=generation;
+ // One inaccessible embedded frame must not prevent the main player from connecting.
+ const documents=chrome.webNavigation.getAllFrames?await chrome.webNavigation.getAllFrames({tabId}).catch(()=>[]):[{frameId:0,url:tab.url}];
+ const ids=[...new Set([0,...(documents||[]).filter(frame=>/^https?:/.test(frame.url)).map(frame=>frame.frameId)])];
+ const results=await Promise.all(ids.map(async frameId=>{
+  try{
+   await chrome.scripting.executeScript({target:{tabId,frameIds:[frameId]},files:['player.js','content.js']});
+   const snapshot=await chrome.tabs.sendMessage(tabId,{kind:'probe'},{frameId});
+   const current=await chrome.storage.local.get('target');
+   if(current.target!==tabId||generation!==epoch)return false;
+   if(snapshot&&typeof snapshot.page==='string'&&typeof snapshot.title==='string'&&Array.isArray(snapshot.actions)){
+    frames.set(frameId,{...snapshot,tab:tabId,seen:Date.now()});return true;
+   }
+  }catch{}
+  return false;
+ }));
+ const current=await chrome.storage.local.get('target');
+ if(current.target!==tabId||generation!==epoch)return false;
+ if(results.some(Boolean))return true;
+ await chrome.storage.local.remove('target');return false;
 }
 async function fullscreen(target,command){
  const tab=await chrome.tabs.get(target),window=await chrome.windows.get(tab.windowId);

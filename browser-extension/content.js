@@ -2,6 +2,7 @@
 if(globalThis.parallexityContent){globalThis.parallexityStart();return;}globalThis.parallexityContent=true;
 let running=false,executed=new Set(),page=crypto.randomUUID(),timer=null;
 chrome.runtime.onMessage.addListener((message,sender,reply)=>{
+ if(message.kind==='probe'&&sender.id===chrome.runtime.id){reply({...ParallexityPlayer.inspect(),page});return;}
  if(message.kind==='inspect'&&sender.id===chrome.runtime.id){reply(message.page===page?{...ParallexityPlayer.inspect(),page}:null);return;}
  if(message.kind!=='execute'||sender.id!==chrome.runtime.id)return;
  if(message.page!==page){reply({id:message.command.id,success:false});return;}

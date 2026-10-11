@@ -71,6 +71,23 @@
     $('next').disabled = !connected || commandPending || !current?.canNext;
     $('previous').disabled = !connected || commandPending || !current?.canPrevious;
     $('media-note').textContent = state.mediaError || '';
+    if(state.browser?.selectedTab){
+      const browser=state.browser,actions=browser.actions||[],paused=!actions.includes('pause');
+      $('session').classList.add('hidden');
+      $('media-app').textContent='Выбранная вкладка';
+      $('title').textContent=browser.title||'Вкладка браузера';
+      $('artist').textContent='−10 / +10 секунд · Управление этой вкладкой';
+      $('play').querySelector('use').setAttribute('href',paused?'#i-play':'#i-pause');
+      $('play').setAttribute('aria-label',paused?'Воспроизвести':'Пауза');
+      $('play').disabled=!connected||extraPending||!browser.connected||!actions.includes(paused?'play':'pause');
+      $('previous').disabled=!connected||extraPending||!browser.connected||!actions.includes('seek-back');
+      $('next').disabled=!connected||extraPending||!browser.connected||!actions.includes('seek-forward');
+      $('media-note').textContent=actions.length?'Чтобы управлять музыкой в приложении, нажми «Отключить вкладку».':'Плеер не найден. Открой видео в выбранной вкладке.';
+    }
+    $('previous').dataset.seek=state.browser?.selectedTab?'−10':'';
+    $('next').dataset.seek=state.browser?.selectedTab?'+10':'';
+    $('previous').setAttribute('aria-label',state.browser?.selectedTab?'Назад на 10 секунд':'Предыдущий трек');
+    $('next').setAttribute('aria-label',state.browser?.selectedTab?'Вперёд на 10 секунд':'Следующий трек');
     const audio = state.audio;
     if (!editingVolume && pendingVolume === null && !volumeSending) { $('volume').value = audio.volume; $('volume-number').textContent = audio.available ? audio.volume + '%' : '—'; }
     $('volume').disabled = !connected || !audio.available;
@@ -137,7 +154,7 @@
     $('browser-refresh').disabled=!connected||extraPending||!canChoose;
     $('browser-hint').textContent = !browser?.connected ? 'В меню значка ПК открой «Расширение браузера…» и подключи расширение.' : !canChoose ? 'Обнови расширение и нажми в нём «Выбирать вкладки с телефона».' : !browser.selectedTab ? 'Открой список и выбери нужную страницу. Вкладки со звуком находятся выше.' : !browser.actions?.length ? 'На этой вкладке пока нет доступного плеера. Открой видео или выбери другую.' : 'Управление выбранной вкладкой. «На ПК» выведет её окно на передний план.';
     renderTabList();
-    const actions = (browser?.actions || []).filter(action => Object.hasOwn(browserLabels, action));
+    const actions = (browser?.actions || []).filter(action => Object.hasOwn(browserLabels, action)&&(!browser.selectedTab||!['play','pause','seek-back','seek-forward'].includes(action)));
     const key = actions.join('|');
     if ($('browser-actions').dataset.key !== key) {
       const buttons = actions.map(action => {
@@ -158,11 +175,11 @@
   }
   async function extraCommand(path, body) {
     if (!connected || extraPending) return false;
-    extraPending = true; renderExtras();
+    extraPending = true; render();
     let done=false;
     try { await api(path, body); done=true; }
     catch (error) { toast(error.message); }
-    finally { extraPending = false; await poll(); renderExtras(); }
+    finally { extraPending = false; await poll(); render(); }
     return done;
   }
   function renderTabList() {
@@ -222,9 +239,9 @@
     catch (error) { toast(error.message); return false; }
     finally { commandPending = false; await poll(); render(); }
   }
-  $('play').addEventListener('click', () => command(state.media.find(m => m.id === selected)?.playing ? 'pause' : 'play'));
-  $('next').addEventListener('click', () => command('next'));
-  $('previous').addEventListener('click', () => command('previous'));
+  $('play').addEventListener('click', () => state?.browser?.selectedTab?extraCommand('/api/browser',{action:state.browser.actions.includes('pause')?'pause':'play'}):command(state.media.find(m => m.id === selected)?.playing ? 'pause' : 'play'));
+  $('next').addEventListener('click', () => state?.browser?.selectedTab?extraCommand('/api/browser',{action:'seek-forward'}):command('next'));
+  $('previous').addEventListener('click', () => state?.browser?.selectedTab?extraCommand('/api/browser',{action:'seek-back'}):command('previous'));
   $('mute').addEventListener('click', () => command('mute'));
   $('display-off').addEventListener('click', async () => {
     if (!connected || commandPending) return;

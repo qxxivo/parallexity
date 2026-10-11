@@ -332,13 +332,35 @@ public sealed class MainForm : Form
     {
         if(!started||stopping)return;
         Restore();
-        using var dialog=new Form{Text="Подключить браузер",Size=new(500,410),StartPosition=FormStartPosition.CenterParent,BackColor=Background,ForeColor=Color.White,Font=Font,FormBorderStyle=FormBorderStyle.FixedDialog,MaximizeBox=false,MinimizeBox=false};
-        dialog.Controls.Add(new Label{Text="1. Скачай и распакуй расширение.\n2. В Chrome / Edge / Яндекс включи режим разработчика\n   на странице расширений и загрузи эту папку.\n3. Открой значок расширения и вставь код ниже.\n4. Включи «Выбирать вкладки с телефона» в расширении.\n\nКод действует 2 минуты. Подключение сохраняется\nпосле перезапуска ПК. Подключение по новому коду заменит старый доступ.",Location=new(18,18),Size=new(460,180)});
+        using var dialog=new Form{Text="Подключить браузер",Size=new(550,410),StartPosition=FormStartPosition.CenterParent,BackColor=Background,ForeColor=Color.White,Font=Font,FormBorderStyle=FormBorderStyle.FixedDialog,MaximizeBox=false,MinimizeBox=false};
+        dialog.Controls.Add(new Label{Text="1. Нажми «Подготовить расширение»: откроется его папка.\n2. В Chrome / Edge / Яндекс включи режим разработчика\n   chrome://extensions → «Загрузить распакованное».\n3. Открой значок расширения и вставь код ниже.\n4. Нажми «Подключить и разрешить управление».\n\nКод действует 2 минуты. Подключение сохраняется\nпосле перезапуска ПК. Подключение по новому коду заменит старый доступ.",Location=new(18,18),Size=new(510,180)});
         var code=new TextBox{Text=server.CreateBrowserCode(),ReadOnly=true,Location=new(18,206),Width=450,BackColor=Card,ForeColor=Color.White};dialog.Controls.Add(code);
         var copy=Button("Скопировать код",(_,_)=>Clipboard.SetText(code.Text));copy.Location=new(18,248);dialog.Controls.Add(copy);
-        var download=Button("Скачать расширение",(_,_)=>Process.Start(new ProcessStartInfo("https://github.com/qxxivo/parallexity/releases/latest/download/parallexity-browser.zip"){UseShellExecute=true}));download.Location=new(250,248);dialog.Controls.Add(download);
+        var download=Button("Подготовить расширение",(_,_)=>PrepareBrowserExtension());download.Location=new(250,248);download.Width=255;dialog.Controls.Add(download);
         var disconnect=Button("Отключить браузер",(_,_)=>{server.DisconnectBrowser();dialog.Close();});disconnect.Location=new(18,300);dialog.Controls.Add(disconnect);
         dialog.ShowDialog(this);
+    }
+
+    private void PrepareBrowserExtension()
+    {
+        try
+        {
+            var folder=Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData),"parallexity","browser-extension");
+            Directory.CreateDirectory(folder);
+            var assembly=typeof(MainForm).Assembly;
+            const string prefix="PhoneRemote.browser-extension.";
+            foreach(var resource in assembly.GetManifestResourceNames().Where(name=>name.StartsWith(prefix,StringComparison.Ordinal)))
+            {
+                var name=resource[prefix.Length..];
+                if(Path.GetFileName(name)!=name)throw new InvalidOperationException("Некорректное имя файла расширения.");
+                using var source=assembly.GetManifestResourceStream(resource)!;
+                using var destination=File.Create(Path.Combine(folder,name));source.CopyTo(destination);
+            }
+            Clipboard.SetText(folder);
+            Process.Start(new ProcessStartInfo(folder){UseShellExecute=true});
+            MessageBox.Show(this,"Папка расширения готова, её путь скопирован.\n\nВ Chrome открой chrome://extensions (в Edge — edge://extensions). Включи «Режим разработчика» → «Загрузить распакованное» и вставь путь папки.\n\nЕсли расширение уже установлено из этой папки, нажми кнопку перезагрузки на его карточке.","Подключить расширение",MessageBoxButtons.OK,MessageBoxIcon.Information);
+        }
+        catch(Exception error){MessageBox.Show(this,"Не удалось подготовить расширение: "+error.Message,"Расширение браузера",MessageBoxButtons.OK,MessageBoxIcon.Error);}
     }
 
     private void ShowHelp() => MessageBox.Show(this,
