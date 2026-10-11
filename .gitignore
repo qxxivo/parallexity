@@ -12,3 +12,7 @@ browser-check.cjs
 data/
 updates/
 *.previous
+
+# Local logo exploration, retained outside the published source set.
+assets/logo-v5-*
+assets/logo-v5.svg

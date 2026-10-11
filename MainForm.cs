@@ -50,7 +50,12 @@ public sealed class MainForm : Form
         root.RowStyles.Add(new(SizeType.Absolute, 56)); root.RowStyles.Add(new(SizeType.Absolute, 45));
         Controls.Add(root);
         var header = new FlowLayoutPanel { Dock = DockStyle.Fill, FlowDirection = FlowDirection.TopDown, WrapContents = false };
-        header.Controls.Add(Label("parallexity", 22, FontStyle.Bold));
+        var brand = new FlowLayoutPanel { AutoSize = true, WrapContents = false, Margin = new(0) };
+        var brandMark = new PictureBox { Image = Icon.ToBitmap(), Size = new(36, 36), SizeMode = PictureBoxSizeMode.Zoom, Margin = new(0, 0, 10, 0) };
+        brand.Controls.Add(brandMark);
+        brand.Controls.Add(Label("parallexity", 22, FontStyle.Bold));
+        header.Controls.Add(brand);
+        FormClosed += (_, _) => brandMark.Image?.Dispose();
         header.Controls.Add(Label("Твой компьютер. Твой телефон. Один пульт.", 10, color: Muted));
         root.Controls.Add(header, 0, 0); root.SetColumnSpan(header, 2);
 

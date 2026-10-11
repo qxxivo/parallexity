@@ -10,7 +10,7 @@
     <ApplicationIcon>assets\parallexity.ico</ApplicationIcon>
     <AssemblyName>parallexity</AssemblyName>
     <RootNamespace>PhoneRemote</RootNamespace>
-    <Version>0.4.0</Version>
+    <Version>0.4.1</Version>
   </PropertyGroup>
   <ItemGroup>
     <FrameworkReference Include="Microsoft.AspNetCore.App" />
