@@ -1,0 +1,13 @@
+.tools/
+bin/
+obj/
+dist/
+*.user
+test-results.json
+test-preview.json
+test-data/
+test-*.png
+browser-check.cjs
+data/
+updates/
+*.previous

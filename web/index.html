@@ -1,0 +1,48 @@
+<!doctype html>
+<html lang="ru">
+<head>
+  <meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+  <meta name="theme-color" content="#10141d"><meta name="color-scheme" content="dark">
+  <title>parallexity</title><link rel="icon" href="/icon.svg"><link rel="stylesheet" href="/app.css">
+  <script src="/app.js" defer></script>
+</head>
+<body>
+  <main>
+    <header><div class="brand"><img src="/icon.svg" alt="" width="42" height="42"><div><span class="eyebrow">parallexity</span><h1>Твой ПК. Под рукой.</h1></div></div><div id="connection" class="connection"><span></span><b>Подключаемся</b></div></header>
+    <section id="pairing" class="card hidden">
+      <span class="eyebrow">ПЕРВОЕ ПОДКЛЮЧЕНИЕ</span><h2>Познакомим устройства</h2>
+      <p>Назови свой телефон. Затем подтверди подключение в окне parallexity на компьютере.</p>
+      <form id="pair-form"><label for="device-name">Имя телефона</label><input id="device-name" maxlength="40" autocomplete="off" value="Мой телефон" required><button id="pair-button" class="primary" type="submit">Подключить к ПК <span>↗</span></button></form>
+      <p id="pair-message" role="status" aria-live="polite"></p>
+    </section>
+    <section id="unpaired" class="card hidden"><span class="eyebrow">НУЖНО ПОДКЛЮЧЕНИЕ</span><h2>Начни с компьютера</h2><p>Открой parallexity на ПК, нажми «Новый QR-код» и отсканируй его камерой телефона.</p><button id="retry" class="secondary">Проверить подключение</button></section>
+    <div id="remote" class="hidden">
+      <nav class="tabs" aria-label="Разделы пульта"><button class="tab active" data-panel="media-panel" aria-pressed="true">Медиа</button><button class="tab" data-panel="sound-panel" aria-pressed="false">Звук</button><button class="tab" data-panel="input-panel" aria-pressed="false">Управление</button></nav>
+      <div id="media-panel" class="tab-panel">
+      <section class="card media-card">
+        <div class="section-heading"><span class="eyebrow">СЕЙЧАС ИГРАЕТ</span><span id="media-app" class="tag">Медиа</span></div>
+        <label class="sr-only" for="session">Выбрать плеер</label><select id="session" aria-label="Выбрать плеер"></select>
+        <div class="track"><div class="artwork" aria-hidden="true"><span>♫</span><i></i><i></i><i></i><i></i><i></i></div><div class="track-copy"><h2 id="title">Открой музыку или видео</h2><p id="artist">Плееры появятся здесь автоматически</p></div></div>
+        <div class="transport"><button id="previous" aria-label="Предыдущий трек" class="round secondary">⏮</button><button id="play" aria-label="Воспроизвести" class="round play">▶</button><button id="next" aria-label="Следующий трек" class="round secondary">⏭</button></div>
+        <p id="media-note" class="hint">Показываем плееры, которыми разрешает управлять Windows.</p>
+      </section>
+      <section class="card volume-card"><div class="section-heading"><span class="eyebrow">ГРОМКОСТЬ КОМПЬЮТЕРА</span><strong id="volume-number">—</strong></div>
+        <label class="sr-only" for="volume">Громкость компьютера</label><input id="volume" type="range" min="0" max="100" value="0" aria-label="Громкость компьютера">
+        <div class="volume-bottom"><button id="mute" class="secondary">♬ <span>Выключить звук</span></button><span id="audio-note" class="hint">Общий звук ПК</span></div>
+      </section>
+      </div>
+      <div id="sound-panel" class="tab-panel hidden"><section class="card"><span class="eyebrow">МИКШЕР ПРИЛОЖЕНИЙ</span><h2>Каждому — свой звук</h2><p class="hint">Приложения появятся, когда начнут воспроизводить звук. Показываем сессии основного устройства вывода.</p><div id="app-mixer"></div><p id="mixer-empty" class="hint">Пока нет приложений со звуком.</p></section></div>
+      <div id="input-panel" class="tab-panel hidden"><section class="card"><div class="section-heading"><span class="eyebrow">МЫШЬ И КЛАВИАТУРА</span><span id="input-status" class="tag">Выключено</span></div><p id="input-note" class="hint">Разреши мышь и клавиатуру в окне программы на ПК.</p>
+        <label class="precision"><input id="precise" type="checkbox"> Точный режим — медленнее и аккуратнее</label>
+        <div id="touchpad" class="touchpad" role="application" aria-label="Тачпад"><span>Двигай пальцем — перемещай курсор</span><small>Касание — клик · два пальца — прокрутка</small></div>
+        <div class="mouse-buttons"><button data-input="click" class="secondary">Левый клик</button><button data-input="right-click" class="secondary">Правый клик</button><button data-input="double-click" class="secondary">Двойной клик</button></div>
+        <div class="key-grid"><button class="secondary" data-key="escape">Esc</button><button class="secondary" data-key="tab">Tab</button><button class="secondary" data-key="enter">Enter</button><button class="secondary" data-key="backspace">⌫</button><button class="secondary" data-key="left">←</button><button class="secondary" data-key="up">↑</button><button class="secondary" data-key="down">↓</button><button class="secondary" data-key="right">→</button></div>
+        <div class="mouse-buttons"><button class="secondary" data-scroll="120">Прокрутить ↑</button><button class="secondary" data-scroll="-120">Прокрутить ↓</button></div>
+      </section><section class="card"><span class="eyebrow">ВВОД ТЕКСТА</span><h2>Печатай с телефона</h2><p class="hint">Сначала выбери поле на ПК. Текст будет введён в активное окно; переносы строк нажимают Enter.</p><label class="sr-only" for="remote-text">Текст для ПК</label><textarea id="remote-text" maxlength="500" placeholder="Напиши текст…" rows="3"></textarea><button id="send-text" class="primary">Ввести на ПК</button><div class="mouse-buttons"><button class="secondary" data-key="select-all">Выделить всё</button><button class="secondary" data-key="copy">Копировать</button><button class="secondary" data-key="paste">Вставить</button><button class="secondary" data-key="undo">Отменить</button></div></section></div>
+      <section id="reconnect" class="card compact hidden"><h2>Возвращаем соединение</h2><p>Проверь, что ПК включён и программа работает. Повторяем подключение автоматически.</p><button id="reconnect-button" class="secondary">Попробовать сейчас</button></section>
+    </div>
+    <div id="toast" role="status" aria-live="polite"></div>
+    <footer><span class="local-dot"></span><span>Напрямую в домашней сети</span><span id="computer"></span></footer>
+  </main>
+</body>
+</html>
