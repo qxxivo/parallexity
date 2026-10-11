@@ -111,6 +111,21 @@ internal static class SelfTest
             Check(File.ReadAllText(dataFile) == "pairing fixture", "Update preserves unrelated device data");
             try { AppUpdates.ReplaceExecutable(updateFile + ".missing", installFile); throw new Exception("Missing update accepted"); }
             catch (FileNotFoundException) { Check(File.ReadAllBytes(installFile).SequenceEqual(new byte[] { 1, 2, 3 }), "Failed update leaves installed executable intact"); }
+            var stale = Path.Combine(folder, "updates", Guid.NewGuid().ToString("N"));
+            Directory.CreateDirectory(stale);
+            File.WriteAllText(Path.Combine(stale, "parallexity.exe"), "stale installer");
+            var unrelated = Path.Combine(folder, "updates", "keep-me");
+            Directory.CreateDirectory(unrelated);
+            File.WriteAllText(Path.Combine(unrelated, "parallexity.exe"), "unrelated file");
+            AppUpdates.CleanOldDownloads(folder);
+            Check(!Directory.Exists(stale) && File.Exists(installFile + ".previous"), "Ordinary cleanup removes stale installer but retains rollback");
+            using (var heldLock = new FileStream(Path.Combine(folder, "updates", "install.lock"), FileMode.Open, FileAccess.ReadWrite, FileShare.None))
+            {
+                AppUpdates.CleanOldDownloads(folder, successfulStartup: true);
+                Check(File.Exists(installFile + ".previous"), "Cleanup cannot interfere with active installer");
+            }
+            AppUpdates.CleanOldDownloads(folder, successfulStartup: true);
+            Check(!File.Exists(installFile + ".previous") && File.Exists(installFile) && File.ReadAllText(dataFile) == "pairing fixture" && File.Exists(Path.Combine(unrelated, "parallexity.exe")), "Healthy startup discards rollback and preserves app, devices and unrelated folders");
             var home = await client.GetAsync("/");
             using (var iconStream = typeof(MainForm).Assembly.GetManifestResourceStream("PhoneRemote.assets.parallexity.ico")!)
             using (var icon = new System.Drawing.Icon(iconStream))

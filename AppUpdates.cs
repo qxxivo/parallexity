@@ -121,13 +121,17 @@ internal static class AppUpdates
         catch { if (File.Exists(backup)) File.Move(backup, destination); throw; }
     }
 
-    internal static void CleanOldDownloads()
+    internal static void CleanOldDownloads(string? baseDirectory = null, bool successfulStartup = false)
     {
-        var updates = Path.Combine(AppContext.BaseDirectory, "updates");
-        if (!Directory.Exists(updates)) return;
+        baseDirectory ??= AppContext.BaseDirectory;
+        var updates = Path.Combine(baseDirectory, "updates");
         try
         {
+            Directory.CreateDirectory(updates);
+            if ((File.GetAttributes(updates) & FileAttributes.ReparsePoint) != 0) return;
             using var updateLock = new FileStream(Path.Combine(updates, "install.lock"), FileMode.OpenOrCreate, FileAccess.ReadWrite, FileShare.None);
+            // Only a healthy new application may discard the rollback copy.
+            if (successfulStartup) File.Delete(Path.Combine(baseDirectory, "parallexity.exe.previous"));
             foreach (var directory in Directory.GetDirectories(updates))
             {
                 if (!Guid.TryParseExact(Path.GetFileName(directory), "N", out _) || (File.GetAttributes(directory) & FileAttributes.ReparsePoint) != 0) continue;

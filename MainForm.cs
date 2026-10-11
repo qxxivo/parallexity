@@ -147,6 +147,10 @@ public sealed class MainForm : Form
             address.SelectedIndex = 0;
             started = true;
             GenerateQr(); timer.Start();
+            // The installer can still hold its lock during our first moments.
+            // Run on the UI context and stop when an update begins, so no fresh
+            // download is ever removed by a delayed startup cleanup.
+            _ = CleanupAfterStartupAsync();
             status.Text = addresses.Length > 0 ? "Пульт готов. Сканируй QR-код с телефона." : "Нет локальной сети. Подключи ПК к роутеру и перезапусти программу.";
         }
         catch (Exception)
@@ -154,6 +158,16 @@ public sealed class MainForm : Form
             status.ForeColor = Color.Salmon;
             status.Text = "Не удалось запустить подключение. Закрой другой экземпляр и попробуй снова.";
             refreshQr.Enabled = false;
+        }
+    }
+
+    private async Task CleanupAfterStartupAsync()
+    {
+        for (var attempt = 0; attempt < 20; attempt++)
+        {
+            await Task.Delay(500);
+            if (updating || stopping || IsDisposed) return;
+            AppUpdates.CleanOldDownloads(successfulStartup: true);
         }
     }
 

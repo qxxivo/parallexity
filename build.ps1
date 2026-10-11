@@ -17,7 +17,7 @@ if ($PackageOnly) { Write-Host "Ready: $outputDirectory\parallexity.exe"; return
 
 # Publish away from the running app, then replace its launch path. Windows allows
 # a running image to be renamed; its process continues using the previous image.
-$installedDirectory = Join-Path $projectDirectory 'dist\PhoneRemote-win-x64'
+$installedDirectory = Join-Path $projectDirectory 'dist'
 New-Item -ItemType Directory -Path $installedDirectory -Force | Out-Null
 $installedExe = Join-Path $installedDirectory 'parallexity.exe'
 $temporaryExe = Join-Path $installedDirectory 'parallexity.new.exe'
