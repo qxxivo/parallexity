@@ -1,6 +1,7 @@
 let frames=new Map(),busy=false,ack=null,generation=crypto.randomUUID().replaceAll('-','');
 let nextSync=0,failures=0;
 let selectedTarget=null;
+let diagnostics={version:'0.9.3',status:'idle',attemptedTab:null,frames:0,responded:0,blocked:0,players:0};
 function retryLater(){nextSync=Date.now()+Math.min(15000,1000*2**Math.min(++failures,4));}
 const origins=['http://*/*','https://*/*'];
 const mediaActions=['play','pause','seek-back','seek-forward','skip-intro','skip-ad','next-episode','set-volume','mute-player','unmute-player'];
@@ -54,7 +55,9 @@ async function sync(){
   const player=sources.find(([,frame])=>frame.actions.includes('set-volume'))?.[1];
   const volume=Number.isInteger(player?.volume)&&player.volume>=0&&player.volume<=100&&typeof player.muted==='boolean'?player.volume:null;
   const epoch=generation;
-  const report={title:(sources[0]?.[1].title||(selected?tab.title:'')||'').slice(0,140),actions,commandId:ack?.id,success:ack?.success,generation:epoch,tabs:catalog?.map(metadata)??null,selectedTab:selected,resumeTab,volume,muted:volume===null?null:player.muted};
+  const diagnosticReport={...diagnostics};
+  if(selected===diagnostics.attemptedTab&&sources.length&&['ready','no-player'].includes(diagnostics.status)){diagnosticReport.players=sources.filter(([,frame])=>frame.area>0).length;diagnosticReport.status=diagnosticReport.players?'ready':'no-player';}
+  const report={title:(sources[0]?.[1].title||(selected?tab.title:'')||'').slice(0,140),actions,commandId:ack?.id,success:ack?.success,generation:epoch,tabs:catalog?.map(metadata)??null,selectedTab:selected,resumeTab,volume,muted:volume===null?null:player.muted,diagnostics:diagnosticReport};
   const response=await fetch(`http://127.0.0.1:${bridge.port}/browser/poll`,{method:'POST',headers:{'Content-Type':'application/json','Authorization':'Bearer '+bridge.token},body:JSON.stringify(report),signal:AbortSignal.timeout(3000)});
   if(!response.ok){retryLater();if(response.status===401){const latest=await chrome.storage.local.get('bridge');if(latest.bridge?.token===bridge.token&&latest.bridge?.port===bridge.port){await chrome.storage.local.remove('bridge');newPage();}}return;}
   nextSync=0;failures=0;
@@ -80,12 +83,14 @@ async function manage(command,catalog){
  return await connectTab(tab.id);
 }
 async function connectTab(tabId){
+ const attempt={version:'0.9.3',status:'connecting',attemptedTab:tabId,frames:0,responded:0,blocked:0,players:0};diagnostics=attempt;
  const tab=await chrome.tabs.get(tabId);if(!eligible(tab))return false;
  changeTarget(tabId);await chrome.storage.local.set({target:tabId});
  const epoch=generation;
  // One inaccessible embedded frame must not prevent the main player from connecting.
  const documents=chrome.webNavigation.getAllFrames?await chrome.webNavigation.getAllFrames({tabId}).catch(()=>[]):[{frameId:0,url:tab.url}];
  const ids=[...new Set([0,...(documents||[]).filter(frame=>/^https?:/.test(frame.url)).map(frame=>frame.frameId)])];
+ attempt.frames=ids.length;
  const results=await Promise.all(ids.map(async frameId=>{
   try{
    await chrome.scripting.executeScript({target:{tabId,frameIds:[frameId]},files:['player.js','content.js']});
@@ -93,14 +98,16 @@ async function connectTab(tabId){
    const current=await chrome.storage.local.get('target');
    if(current.target!==tabId||generation!==epoch)return false;
    if(snapshot&&typeof snapshot.page==='string'&&typeof snapshot.title==='string'&&Array.isArray(snapshot.actions)){
+    attempt.responded++;if(snapshot.area>0)attempt.players++;
     frames.set(frameId,{...snapshot,tab:tabId,seen:Date.now()});return true;
    }
-  }catch{}
+  }catch{attempt.blocked++;}
   return false;
  }));
  const current=await chrome.storage.local.get('target');
- if(current.target!==tabId||generation!==epoch)return false;
- if(results.some(Boolean)){if([...frames.values()].some(frame=>frame.tab===tabId&&frame.area>0))await chrome.storage.session.set({lastTab:tabId});return true;}
+ if(current.target!==tabId||generation!==epoch){attempt.status='changed';return false;}
+ if(results.some(Boolean)){attempt.status=attempt.players?'ready':'no-player';if([...frames.values()].some(frame=>frame.tab===tabId&&frame.area>0))await chrome.storage.session.set({lastTab:tabId});return true;}
+ attempt.status='blocked';
  await chrome.storage.local.remove('target');return false;
 }
 async function fullscreen(target,command){

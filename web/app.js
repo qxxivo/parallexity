@@ -9,6 +9,7 @@
   }
   let state = null, selected = '', connected = false, pairing = false, polling = false;
   let requestedTab=null;
+  let lastBrowserCommand='Команды ещё не отправлялись';
   function browserTarget(){return requestedTab?.id??state?.browser?.selectedTab;}
   function browserReady(){return !!state?.browser?.connected&&!!browserTarget()&&state.browser.selectedTab===browserTarget();}
   async function selectBrowserTab(tab){
@@ -164,6 +165,19 @@
     $('viewing-state').textContent = state.viewingMode ? 'Включён' : 'Выключен';
     $('viewing-hint').textContent = state.viewingMode ? 'ПК остаётся активным. Таймер или «Погасить экран» выключит этот режим.' : 'Включи, чтобы ПК и экран не засыпали от бездействия во время просмотра.';
     const browser = requestedTab&&!browserReady()?{...state.browser,selectedTab:null,actions:[],volume:null,muted:null}:state.browser;
+    const diagnostic=state.browser?.diagnostics;
+    const statusLabels={'idle':'Подключение вкладки ещё не запрашивалось','connecting':'Подключаем вкладку','ready':'Видеоплеер найден','no-player':'Скрипт подключён, видеоплеер не найден','blocked':'Нет ответа от скриптов вкладки','changed':'Выбор или страница изменились во время подключения'};
+    $('browser-diagnostics').textContent=[
+      'Пульт: 0.9.3 · расширение: '+(diagnostic?.version||'не сообщает версию'),
+      'Связь с расширением: '+(state.browser?.connected?'есть':'нет'),
+      'Выбрано на телефоне: '+(requestedTab?requestedTab.title+' (№'+requestedTab.id+')':'в этой странице пульта выбор не запрашивался'),
+      'Подтверждено расширением: '+(state.browser?.selectedTab?'№'+state.browser.selectedTab+' · '+state.browser.title:'нет выбранной вкладки'),
+      'Последняя попытка расширения: '+(diagnostic?.attemptedTab?'№'+diagnostic.attemptedTab:'нет'),
+      'Результат: '+(diagnostic?statusLabels[diagnostic.status]||'неизвестно':'Обнови расширение до 0.9.3 и нажми ↻ в Chrome'),
+      diagnostic?'Области страницы: '+diagnostic.frames+' · ответили: '+diagnostic.responded+' · ошибки доступа/ответа: '+diagnostic.blocked+' · видеоплееры: '+diagnostic.players:'',
+      'Команды вкладки: '+(state.browser?.actions?.join(', ')||'нет'),
+      'Последняя команда: '+lastBrowserCommand
+    ].filter(Boolean).join('\n');
     $('browser-card').classList.remove('hidden');
     $('media-panel').classList.toggle('browser-priority',!!browser?.connected&&(Array.isArray(browser.tabs)||!!browser.selectedTab||!!browser.actions?.length));
     $('browser-title').textContent = browser?.title || (browser?.connected ? 'Выбери вкладку с видео' : 'Подключи браузер к пульту');
@@ -208,8 +222,9 @@
     if (!connected || extraPending) return false;
     extraPending = true; render();
     let done=false;
-    try { await api(path, body); done=true; }
-    catch (error) { toast(error.message); }
+    if(path==='/api/browser')lastBrowserCommand=body.action+' → вкладка '+(body.tabId??browserTarget()??'не выбрана')+' · ждём ответ';
+    try { await api(path, body); done=true;if(path==='/api/browser')lastBrowserCommand=body.action+' → вкладка '+(body.tabId??browserTarget()??'не выбрана')+' · подтверждено'; }
+    catch (error) { toast(error.message);if(path==='/api/browser')lastBrowserCommand=body.action+' · ошибка: '+error.message; }
     finally { extraPending = false; await poll(); render(); }
     return done;
   }

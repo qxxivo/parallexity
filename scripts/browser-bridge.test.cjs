@@ -50,6 +50,7 @@ const report=(tab=7,actions=['skip-intro'])=>new Promise(resolve=>listeners.mess
  next={id:'choose-nine',action:'select-tab',tabId:9};await pulse();assert.equal(stored.target,9);assert.equal(scripts.at(-1).target.tabId,9);
  await pulse();assert.equal(posts.at(-1).selectedTab,9);assert.equal(posts.at(-1).commandId,'choose-nine');assert.equal(posts.at(-1).success,true,'Selection acknowledgement survives generation change');
  assert.ok(posts.at(-1).actions.includes('pause'),'Selection discovers playable controls immediately despite an inaccessible iframe');
+ assert.equal(posts.at(-1).diagnostics.version,'0.9.3');assert.equal(posts.at(-1).diagnostics.status,'ready');assert.equal(posts.at(-1).diagnostics.attemptedTab,9);assert.equal(posts.at(-1).diagnostics.frames,2);assert.equal(posts.at(-1).diagnostics.responded,1);assert.equal(posts.at(-1).diagnostics.blocked,1);
  const changedListener=listeners.changed,originalExecute=chrome.scripting.executeScript,pendingChanges=[];
  listeners.changed=(...args)=>pendingChanges.push(args);
  chrome.scripting.executeScript=async options=>{await originalExecute(options);for(const args of pendingChanges.splice(0))changedListener(...args);};
@@ -59,6 +60,7 @@ const report=(tab=7,actions=['skip-intro'])=>new Promise(resolve=>listeners.mess
  listeners.changed=changedListener;chrome.scripting.executeScript=originalExecute;
  next={id:'restore-nine',action:'select-tab',tabId:9};await pulse();await pulse();
  blockScripts=true;next={id:'blocked-selection',action:'select-tab',tabId:7};await pulse();await pulse();assert.equal(posts.at(-1).success,false,'Injection failure is never acknowledged as a successful connection');assert.equal(stored.target,undefined);blockScripts=false;
+ assert.equal(posts.at(-1).diagnostics.status,'blocked');assert.equal(posts.at(-1).diagnostics.attemptedTab,7);assert.equal(posts.at(-1).diagnostics.responded,0);assert.equal(posts.at(-1).diagnostics.blocked,2);
  next={id:'rechoose-nine',action:'select-tab',tabId:9};await pulse();await pulse();
 assert.equal(posts.at(-1).resumeTab,9);assert.equal(posts.at(-1).volume,65);assert.equal(posts.at(-1).muted,false);
  next={id:'video-volume',action:'set-volume',tabId:9,volume:32};await pulse();assert.equal(sent.at(-1).message.command.volume,32);assert.equal(sent.at(-1).tab,9);

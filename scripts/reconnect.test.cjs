@@ -151,6 +151,8 @@ async function settle() { for (let i = 0; i < 20; i++) await Promise.resolve(); 
   failedSelection.node('browser-choose').emit('click');failedSelection.node('browser-tab-list').items[0].items[0].emit('click');await settle();
   assert.equal(failedSelection.node('title').textContent,'Кинопоиск','Failed selection keeps the requested title instead of showing YouTube');
   assert.equal(failedSelection.node('play').disabled,true);
+  assert.ok(failedSelection.node('browser-diagnostics').textContent.includes('Кинопоиск'));
+  assert.ok(failedSelection.node('browser-diagnostics').textContent.includes('ошибка: Connection failed'));
   const playbackCount=failedSelection.requests.length;
   failedSelection.node('play').emit('click');failedSelection.node('next').emit('click');failedSelection.node('previous').emit('click');await settle();
   assert.equal(failedSelection.requests.length,playbackCount,'Failure never routes transport to YouTube or native Windows media');

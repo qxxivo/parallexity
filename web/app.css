@@ -14,3 +14,4 @@ header{margin-bottom:24px}.brand{font-size:19px}.brand-dot,.heading-dot{display:
 .browser-volume{margin-top:22px;padding-top:18px;border-top:1px solid #ffffff0d}.browser-volume .volume-top{display:flex;align-items:center;justify-content:space-between;font-size:12px;color:var(--muted)}.browser-volume input{margin:16px 0}.browser-volume button{font-size:12px}.browser-volume .hint{font-size:11px;margin-bottom:0}.resume-button{width:100%;margin-top:14px;text-align:left;display:flex;flex-direction:column;gap:6px;min-width:0}.resume-button span{display:block;max-width:100%;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;font-size:11px;color:var(--muted)}
 
 .browser-volume .volume-top label{margin:0}
+.browser-diagnostics{margin-top:16px}.browser-diagnostics summary{font-size:13px;cursor:pointer}.browser-diagnostics pre{font:12px/1.7 system-ui;white-space:pre-wrap;overflow-wrap:anywhere;margin-top:12px}

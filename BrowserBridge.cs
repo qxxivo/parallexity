@@ -4,8 +4,9 @@ using System.Text;
 namespace PhoneRemote;
 
 public record BrowserTab(int Id, string Title, string Domain, bool Audible=false);
-public record BrowserState(bool Connected, string Title, string[] Actions, BrowserTab[]? Tabs=null, int? SelectedTab=null, int? ResumeTab=null, int? Volume=null, bool? Muted=null);
-public record BrowserReport(string Title, string[] Actions, string? CommandId=null, bool? Success=null,string? Generation=null, BrowserTab[]? Tabs=null, int? SelectedTab=null, int? ResumeTab=null, int? Volume=null, bool? Muted=null);
+public record BrowserDiagnostics(string Version, string Status, int? AttemptedTab, int Frames, int Responded, int Blocked, int Players);
+public record BrowserState(bool Connected, string Title, string[] Actions, BrowserTab[]? Tabs=null, int? SelectedTab=null, int? ResumeTab=null, int? Volume=null, bool? Muted=null, BrowserDiagnostics? Diagnostics=null);
+public record BrowserReport(string Title, string[] Actions, string? CommandId=null, bool? Success=null,string? Generation=null, BrowserTab[]? Tabs=null, int? SelectedTab=null, int? ResumeTab=null, int? Volume=null, bool? Muted=null, BrowserDiagnostics? Diagnostics=null);
 public record BrowserInstruction(string Id,string Action,string? Generation,int? TabId=null, int? Volume=null);
 public record BrowserCommandRequest(string Action,int? TabId=null, int? Volume=null);
 internal sealed class BrowserBridge
@@ -25,6 +26,7 @@ internal sealed class BrowserBridge
     private TaskCompletionSource<bool>? completion;
     private readonly string? file;
     private string? generation;
+    private BrowserDiagnostics? diagnostics;
     internal BrowserBridge(Func<DateTimeOffset>? clock=null,string? file=null)
     {
         now=clock??(()=>DateTimeOffset.UtcNow);this.file=file;
@@ -47,7 +49,7 @@ internal sealed class BrowserBridge
     }
     private static string Hash(string token)=>Convert.ToHexString(SHA256.HashData(Encoding.UTF8.GetBytes(token)));
     internal bool Authorized(string token) {lock(sync)return token.Length==64&&secretHash is not null&&CryptographicOperations.FixedTimeEquals(Convert.FromHexString(Hash(token)),Convert.FromHexString(secretHash));}
-    internal BrowserState State {get{lock(sync){var connected=secretHash is not null&&now()-lastSeen<TimeSpan.FromSeconds(10);return new(connected,connected?title:"",connected?actions:Array.Empty<string>(),connected?tabs:null,connected?selectedTab:null,connected?resumeTab:null,connected?volume:null,connected?muted:null);}}}
+    internal BrowserState State {get{lock(sync){var connected=secretHash is not null&&now()-lastSeen<TimeSpan.FromSeconds(10);return new(connected,connected?title:"",connected?actions:Array.Empty<string>(),connected?tabs:null,connected?selectedTab:null,connected?resumeTab:null,connected?volume:null,connected?muted:null,connected?diagnostics:null);}}}
     internal BrowserInstruction? Report(BrowserReport report,string? token=null)
     {
         lock(sync)
@@ -63,6 +65,7 @@ internal sealed class BrowserBridge
             }
             if(report.Generation!=generation){completion?.TrySetResult(false);command=null;completion=null;generation=report.Generation;}
             lastSeen=now();title=report.Title;actions=report.Actions.Distinct().Where(AllowedActions.Contains).ToArray();tabs=report.Tabs;selectedTab=report.SelectedTab;resumeTab=report.ResumeTab;volume=report.Volume;muted=report.Muted;
+            diagnostics=report.Diagnostics;
             if(command is not null&&report.CommandId==command.Id){completion?.TrySetResult(report.Success==true);command=null;completion=null;}
             if(command is not null&&now()>commandExpiry){completion?.TrySetResult(false);command=null;completion=null;}
             return command;

@@ -193,6 +193,9 @@ internal static class SelfTest
             Check(pinnedInstruction is {Action:"pause",TabId:9},"Playback carries the explicit selected tab");
             bridgeFixture.Report(new("Music",new[]{"pause","set-volume"},pinnedInstruction.Id,true,generation,fixtureTabs,9));
             Check(await pinnedPlayback,"Pinned playback completes after acknowledgement");
+            var browserDiagnostics=new BrowserDiagnostics("0.9.3","blocked",7,2,0,2,0);
+            bridgeFixture.Report(new("Music",new[]{"pause","set-volume"},Generation:generation,Tabs:fixtureTabs,SelectedTab:9,Diagnostics:browserDiagnostics));
+            Check(bridgeFixture.State.Diagnostics==browserDiagnostics,"Browser diagnostics reach trusted remote state");
             var volumeWork=bridgeFixture.ExecuteAsync("set-volume",9,32);
             var volumeInstruction=bridgeFixture.Report(new("Music",new[]{"set-volume"},Generation:generation,Tabs:fixtureTabs,SelectedTab:9))!;
             Check(volumeInstruction is {TabId:9,Volume:32},"Volume command preserves intended tab and level");

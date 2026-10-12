@@ -179,6 +179,7 @@ public sealed class RemoteServer : IAsyncDisposable
             if(report.Tabs is { } tabs&&(tabs.Length>200||tabs.Any(t=>t is null||t.Id<=0||t.Title is null||t.Title.Length>100||t.Domain is null||t.Domain.Length>120||t.Domain.Any(c=>char.IsControl(c)||c is '/' or ':' or '?' or '#'))||tabs.Select(t=>t.Id).Distinct().Count()!=tabs.Length||report.SelectedTab is int selected&&!tabs.Any(t=>t.Id==selected)))return Results.BadRequest();
             if(report.SelectedTab is <=0||report.ResumeTab is <=0||report.ResumeTab is int resume&&(report.Tabs is null||!report.Tabs.Any(tab=>tab.Id==resume)))return Results.BadRequest();
             if(report.Volume is <0 or >100||(report.Volume is null)!=(report.Muted is null)||report.Volume is not null&&(!report.Actions.Contains("set-volume")||report.SelectedTab is null))return Results.BadRequest();
+            if(report.Diagnostics is {} d&&(d.Version is null||d.Version.Length>20||!d.Version.All(c=>char.IsAsciiDigit(c)||c=='.')||d.Status is not ("idle" or "connecting" or "ready" or "no-player" or "blocked" or "changed")||d.AttemptedTab is <=0||d.Frames is <0 or >10000||d.Responded<0||d.Blocked<0||d.Players<0||d.Responded>d.Frames||d.Blocked>d.Frames||d.Players>d.Frames))return Results.BadRequest();
             return Results.Ok(new{command=browser.Report(report,auth[7..])});
         });
         instance.MapPost("/api/command", async (HttpContext context) =>
