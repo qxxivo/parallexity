@@ -54,14 +54,19 @@
     $('display-off').disabled = !connected || commandPending;
     const media = state.media || [];
     if (!media.some(m => m.id === selected)) selected = media[0]?.id || '';
-    const optionKey = media.map(m => m.id + ':' + m.app).join('|');
+    const browserChoice = !!state.browser?.connected && Array.isArray(state.browser.tabs);
+    const browserSelected = !!state.browser?.selectedTab;
+    const optionKey = media.map(m => m.id + ':' + m.app).join('|') + ':' + browserChoice + ':' + browserSelected;
     if ($('session').dataset.key !== optionKey) {
-      $('session').replaceChildren(...media.map(m => { const option = document.createElement('option'); option.value = m.id; option.textContent = m.app; return option; }));
+      const options = media.map(m => { const option = document.createElement('option'); option.value = m.id; option.textContent = m.app; return option; });
+      if (!media.length && browserChoice) { const placeholder=document.createElement('option');placeholder.value='';placeholder.textContent='Выбрать плеер';placeholder.disabled=true;options.push(placeholder); }
+      if (browserChoice) { const option=document.createElement('option');option.value='browser-tabs';option.textContent=browserSelected?'Браузер · выбранная вкладка':'Браузер · выбрать вкладку';options.push(option); }
+      $('session').replaceChildren(...options);
       $('session').dataset.key = optionKey;
     }
-    $('session').value = selected;
-    $('session').classList.toggle('hidden', media.length < 2);
-    $('session').disabled = !connected || commandPending;
+    $('session').value = browserSelected && browserChoice ? 'browser-tabs' : selected;
+    $('session').classList.toggle('hidden', !browserChoice && media.length < 2);
+    $('session').disabled = !connected || commandPending || extraPending;
     const current = media.find(m => m.id === selected);
     $('media-app').textContent = current?.app || 'Медиа';
     $('title').textContent = current?.title || (current ? 'Без названия' : 'Открой музыку или видео');
@@ -74,7 +79,6 @@
     $('media-note').textContent = state.mediaError || '';
     if(state.browser?.selectedTab){
       const browser=state.browser,actions=browser.actions||[],paused=!actions.includes('pause');
-      $('session').classList.add('hidden');
       $('media-app').textContent='Выбранная вкладка';
       $('title').textContent=browser.title||'Вкладка браузера';
       $('artist').textContent='−10 / +10 секунд · Управление этой вкладкой';
@@ -83,7 +87,7 @@
       $('play').disabled=!connected||extraPending||!browser.connected||!actions.includes(paused?'play':'pause');
       $('previous').disabled=!connected||extraPending||!browser.connected||!actions.includes('seek-back');
       $('next').disabled=!connected||extraPending||!browser.connected||!actions.includes('seek-forward');
-      $('media-note').textContent=actions.length?'Чтобы управлять музыкой в приложении, нажми «Отключить вкладку».':'Плеер не найден. Открой видео в выбранной вкладке.';
+      $('media-note').textContent=actions.length?'Другой плеер или вкладку можно выбрать в списке выше.':'Плеер не найден. Открой видео в выбранной вкладке.';
     }
     $('previous').dataset.seek=state.browser?.selectedTab?'−10':'';
     $('next').dataset.seek=state.browser?.selectedTab?'+10':'';
@@ -215,7 +219,8 @@
     $('browser-tabs-empty').textContent=tabs.length?'Нет совпадений. Попробуй другое название или сайт.':'Открой обычный сайт в браузере — он появится здесь.';
     $('browser-tabs-empty').classList.toggle('hidden',!!matches.length);
   }
-  $('browser-choose').addEventListener('click',()=>{if($('browser-choose').disabled)return;$('browser-search').value='';renderTabList();$('browser-picker').showModal();});
+  function openBrowserPicker(){if($('browser-choose').disabled)return;$('browser-search').value='';renderTabList();$('browser-picker').showModal();}
+  $('browser-choose').addEventListener('click',openBrowserPicker);
   $('browser-picker-close').addEventListener('click',()=>$('browser-picker').close());
   $('browser-search').addEventListener('input',renderTabList);
   $('browser-refresh').addEventListener('click',()=>extraCommand('/api/browser',{action:'refresh-tabs'}));
@@ -266,7 +271,14 @@
     if (!connected || commandPending) return;
     if (await command('display-off')) toast('Команда выключения экрана отправлена.');
   });
-  $('session').addEventListener('change', () => { selected = $('session').value; preference('player', selected); render(); });
+  $('session').addEventListener('change', async () => {
+    const choice=$('session').value;
+    if ($('session').disabled) return;
+    if (choice==='browser-tabs') { openBrowserPicker();render();return; }
+    if (!state?.media?.some(media=>media.id===choice)) {render();return;}
+    if (state.browser?.selectedTab && !await extraCommand('/api/browser',{action:'detach-tab'})) return;
+    selected=choice;preference('player',selected);render();
+  });
   async function sendVolume() {
     if (volumeSending || pendingVolume === null || !connected) return;
     volumeSending = true;
