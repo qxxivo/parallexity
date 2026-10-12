@@ -8,6 +8,22 @@
     } catch { return null; }
   }
   let state = null, selected = '', connected = false, pairing = false, polling = false;
+  let requestedTab=null;
+  function browserTarget(){return requestedTab?.id??state?.browser?.selectedTab;}
+  function browserReady(){return !!state?.browser?.connected&&!!browserTarget()&&state.browser.selectedTab===browserTarget();}
+  async function selectBrowserTab(tab){
+    if(!connected||extraPending||!state?.browser?.connected)return;
+    requestedTab={id:tab.id,title:tab.title};render();
+    if(await extraCommand('/api/browser',{action:'select-tab',tabId:tab.id})){$('browser-picker').close();toast('Вкладка выбрана.');}
+  }
+  async function detachBrowser(){
+    if(state?.browser?.selectedTab&&!await extraCommand('/api/browser',{action:'detach-tab'}))return false;
+    requestedTab=null;render();return true;
+  }
+  function browserPlayback(action){
+    if(!browserReady()||extraPending||!state.browser.actions.includes(action))return;
+    return extraCommand('/api/browser',{action,tabId:browserTarget()});
+  }
   let editingVolume = false, volumeTimer = null, pendingVolume = null, volumeSending = false;
   let commandPending = false, textSending = false, toastTimer = null;
   let pollTimer = null, pollFailures = 0, pollAbort = null, wakeRequested = false;
@@ -55,7 +71,7 @@
     const media = state.media || [];
     if (!media.some(m => m.id === selected)) selected = media[0]?.id || '';
     const browserChoice = !!state.browser?.connected && Array.isArray(state.browser.tabs);
-    const browserSelected = !!state.browser?.selectedTab;
+    const browserSelected = !!browserTarget();
     const optionKey = media.map(m => m.id + ':' + m.app).join('|') + ':' + browserChoice + ':' + browserSelected;
     if ($('session').dataset.key !== optionKey) {
       const options = media.map(m => { const option = document.createElement('option'); option.value = m.id; option.textContent = m.app; return option; });
@@ -77,17 +93,17 @@
     $('next').disabled = !connected || commandPending || !current?.canNext;
     $('previous').disabled = !connected || commandPending || !current?.canPrevious;
     $('media-note').textContent = state.mediaError || '';
-    if(state.browser?.selectedTab){
-      const browser=state.browser,actions=browser.actions||[],paused=!actions.includes('pause');
+    if(browserTarget()){
+      const browser=state.browser||{},actions=browserReady()?browser.actions||[]:[],paused=!actions.includes('pause');
       $('media-app').textContent='Выбранная вкладка';
-      $('title').textContent=browser.title||'Вкладка браузера';
+      $('title').textContent=browserReady()?browser.title||'Вкладка браузера':requestedTab?.title||'Вкладка браузера';
       $('artist').textContent='−10 / +10 секунд · Управление этой вкладкой';
       $('play').querySelector('use').setAttribute('href',paused?'#i-play':'#i-pause');
       $('play').setAttribute('aria-label',paused?'Воспроизвести':'Пауза');
       $('play').disabled=!connected||extraPending||!browser.connected||!actions.includes(paused?'play':'pause');
       $('previous').disabled=!connected||extraPending||!browser.connected||!actions.includes('seek-back');
       $('next').disabled=!connected||extraPending||!browser.connected||!actions.includes('seek-forward');
-      $('media-note').textContent=actions.length?'Другой плеер или вкладку можно выбрать в списке выше.':'Плеер не найден. Открой видео в выбранной вкладке.';
+      $('media-note').textContent=!browserReady()?'Выбранная вкладка не подключена. Выбери её повторно в списке вкладок.':actions.length?'Другой плеер или вкладку можно выбрать в списке выше.':'Плеер не найден. Открой видео в выбранной вкладке.';
     }
     $('previous').dataset.seek=state.browser?.selectedTab?'−10':'';
     $('next').dataset.seek=state.browser?.selectedTab?'+10':'';
@@ -147,14 +163,14 @@
     $('viewing-toggle').classList.toggle('active', !!state.viewingMode);
     $('viewing-state').textContent = state.viewingMode ? 'Включён' : 'Выключен';
     $('viewing-hint').textContent = state.viewingMode ? 'ПК остаётся активным. Таймер или «Погасить экран» выключит этот режим.' : 'Включи, чтобы ПК и экран не засыпали от бездействия во время просмотра.';
-    const browser = state.browser;
+    const browser = requestedTab&&!browserReady()?{...state.browser,selectedTab:null,actions:[],volume:null,muted:null}:state.browser;
     $('browser-card').classList.remove('hidden');
     $('media-panel').classList.toggle('browser-priority',!!browser?.connected&&(Array.isArray(browser.tabs)||!!browser.selectedTab||!!browser.actions?.length));
     $('browser-title').textContent = browser?.title || (browser?.connected ? 'Выбери вкладку с видео' : 'Подключи браузер к пульту');
     const canChoose = !!browser?.connected && Array.isArray(browser.tabs);
     $('browser-choose').disabled=!connected||extraPending||!canChoose;
     $('browser-focus').classList.toggle('hidden',!canChoose||!browser.selectedTab);
-    $('browser-detach').classList.toggle('hidden',!canChoose||!browser.selectedTab);
+    $('browser-detach').classList.toggle('hidden',!browserTarget());
     $('browser-focus').disabled=$('browser-detach').disabled=!connected||extraPending;
     $('browser-refresh').disabled=!connected||extraPending||!canChoose;
     const resume=canChoose&&!browser.selectedTab?browser.tabs.find(tab=>tab.id===browser.resumeTab):null;
@@ -198,7 +214,7 @@
     return done;
   }
   function renderTabList() {
-    const tabs=state?.browser?.tabs||[],selectedTab=state?.browser?.selectedTab;
+    const tabs=state?.browser?.tabs||[],selectedTab=browserTarget();
     const search=$('browser-search').value.trim().toLocaleLowerCase();
     const matches=tabs.filter(tab=>(tab.title+' '+tab.domain).toLocaleLowerCase().includes(search));
     const key=JSON.stringify([matches,selectedTab]);
@@ -208,7 +224,7 @@
         const choose=document.createElement('button');choose.type='button';choose.className='browser-tab-select';
         const title=document.createElement('span');title.className='browser-tab-title';title.textContent=tab.title;
         const meta=document.createElement('span');meta.className='browser-tab-meta';meta.textContent=tab.domain+(tab.audible?' · Со звуком':'')+(tab.id===selectedTab?' · Выбрана':' · Выбрать');
-        choose.append(title,meta);choose.addEventListener('click',async()=>{if(await extraCommand('/api/browser',{action:'select-tab',tabId:tab.id})){$('browser-picker').close();toast('Вкладка выбрана.');}});
+        choose.append(title,meta);choose.addEventListener('click',()=>selectBrowserTab(tab));
         const focus=document.createElement('button');focus.type='button';focus.className='secondary browser-tab-open';focus.textContent='На ПК ↗';focus.setAttribute('aria-label','Открыть на ПК: '+tab.title);
         focus.addEventListener('click',async()=>{if(await extraCommand('/api/browser',{action:'focus-tab',tabId:tab.id}))toast('Вкладка открыта на ПК.');});row.append(choose,focus);return row;
       });
@@ -225,7 +241,7 @@
   $('browser-search').addEventListener('input',renderTabList);
   $('browser-refresh').addEventListener('click',()=>extraCommand('/api/browser',{action:'refresh-tabs'}));
   $('browser-focus').addEventListener('click',()=>extraCommand('/api/browser',{action:'focus-tab',tabId:state?.browser?.selectedTab}));
-  $('browser-resume').addEventListener('click',()=>{const tab=state?.browser?.tabs?.find(tab=>tab.id===state.browser.resumeTab);if(tab&&!state.browser.selectedTab)void extraCommand('/api/browser',{action:'select-tab',tabId:tab.id});});
+  $('browser-resume').addEventListener('click',()=>{const tab=state?.browser?.tabs?.find(tab=>tab.id===state.browser.resumeTab);if(tab&&!state.browser.selectedTab)void selectBrowserTab(tab);});
   $('browser-volume').addEventListener('input',()=>{if(!browserVolumeEditing)browserVolumeTarget=state?.browser?.selectedTab;browserVolumeEditing=true;$('browser-volume-number').textContent=$('browser-volume').value+'%';paintRange($('browser-volume'));});
   $('browser-volume').addEventListener('change',async()=>{
     const tabId=browserVolumeTarget,volume=Number($('browser-volume').value);
@@ -233,7 +249,7 @@
     finally{browserVolumeEditing=false;browserVolumeTarget=null;render();}
   });
   $('browser-mute').addEventListener('click',()=>{const browser=state?.browser;if(browser?.selectedTab)void extraCommand('/api/browser',{action:browser.muted?'unmute-player':'mute-player',tabId:browser.selectedTab});});
-  $('browser-detach').addEventListener('click',()=>extraCommand('/api/browser',{action:'detach-tab'}));
+  $('browser-detach').addEventListener('click',()=>detachBrowser());
   $('timer-form').addEventListener('submit', event => {
     event.preventDefault();
     const choice = $('timer-action').value;
@@ -263,9 +279,9 @@
     catch (error) { toast(error.message); return false; }
     finally { commandPending = false; await poll(); render(); }
   }
-  $('play').addEventListener('click', () => state?.browser?.selectedTab?extraCommand('/api/browser',{action:state.browser.actions.includes('pause')?'pause':'play'}):command(state.media.find(m => m.id === selected)?.playing ? 'pause' : 'play'));
-  $('next').addEventListener('click', () => state?.browser?.selectedTab?extraCommand('/api/browser',{action:'seek-forward'}):command('next'));
-  $('previous').addEventListener('click', () => state?.browser?.selectedTab?extraCommand('/api/browser',{action:'seek-back'}):command('previous'));
+  $('play').addEventListener('click', () => browserTarget()?browserPlayback(state.browser?.actions?.includes('pause')?'pause':'play'):command(state.media.find(m => m.id === selected)?.playing ? 'pause' : 'play'));
+  $('next').addEventListener('click', () => browserTarget()?browserPlayback('seek-forward'):command('next'));
+  $('previous').addEventListener('click', () => browserTarget()?browserPlayback('seek-back'):command('previous'));
   $('mute').addEventListener('click', () => command('mute'));
   $('display-off').addEventListener('click', async () => {
     if (!connected || commandPending) return;
@@ -276,7 +292,7 @@
     if ($('session').disabled) return;
     if (choice==='browser-tabs') { openBrowserPicker();render();return; }
     if (!state?.media?.some(media=>media.id===choice)) {render();return;}
-    if (state.browser?.selectedTab && !await extraCommand('/api/browser',{action:'detach-tab'})) return;
+    if (browserTarget() && !await detachBrowser()) return;
     selected=choice;preference('player',selected);render();
   });
   async function sendVolume() {

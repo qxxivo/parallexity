@@ -84,7 +84,7 @@ internal sealed class BrowserBridge
                 if(tabs is null||((action is "select-tab" or "focus-tab")&&!tabs.Any(tab=>tab.Id==tabId))||
                     ((action is "refresh-tabs" or "detach-tab")&&tabId is not null)||(action=="detach-tab"&&selectedTab is null))return false;
             }
-            else if((!audio&&tabId is not null)||!actions.Contains(action))return false;
+            else if((tabId is not null&&tabId!=selectedTab)||!actions.Contains(action))return false;
             command=new(Guid.NewGuid().ToString("N"),action,generation,tabId,volume);commandExpiry=now()+timeout;
             completion=new(TaskCreationOptions.RunContinuationsAsynchronously);task=completion.Task;
         }

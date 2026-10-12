@@ -1,11 +1,13 @@
 let frames=new Map(),busy=false,ack=null,generation=crypto.randomUUID().replaceAll('-','');
 let nextSync=0,failures=0;
+let selectedTarget=null;
 function retryLater(){nextSync=Date.now()+Math.min(15000,1000*2**Math.min(++failures,4));}
 const origins=['http://*/*','https://*/*'];
 const mediaActions=['play','pause','seek-back','seek-forward','skip-intro','skip-ad','next-episode','set-volume','mute-player','unmute-player'];
 const managementActions=['select-tab','focus-tab','refresh-tabs','detach-tab'];
 function eligible(tab){return Number.isInteger(tab?.id)&&tab.id>0&&!tab.incognito&&/^https?:\/\//.test(tab.url||'');}
 function newPage(){frames.clear();generation=crypto.randomUUID().replaceAll('-','');}
+function changeTarget(target){if(selectedTarget===target)return;selectedTarget=target;newPage();}
 function metadata(tab){const hostname=new URL(tab.url).hostname,title=(tab.title||'').replace(/[\u0000-\u001f\u007f]/g,' ').replace(/\s+/g,' ').trim()||hostname;return{id:tab.id,title:title.slice(0,100),domain:(hostname.includes(':')?'IPv6-сайт':hostname).slice(0,120),audible:!!tab.audible};}
 chrome.runtime.onMessage.addListener((message,sender,reply)=>{
  if(sender.id!==chrome.runtime.id)return;
@@ -79,7 +81,7 @@ async function manage(command,catalog){
 }
 async function connectTab(tabId){
  const tab=await chrome.tabs.get(tabId);if(!eligible(tab))return false;
- await chrome.storage.local.set({target:tabId});newPage();
+ changeTarget(tabId);await chrome.storage.local.set({target:tabId});
  const epoch=generation;
  // One inaccessible embedded frame must not prevent the main player from connecting.
  const documents=chrome.webNavigation.getAllFrames?await chrome.webNavigation.getAllFrames({tabId}).catch(()=>[]):[{frameId:0,url:tab.url}];
@@ -115,7 +117,7 @@ async function fullscreen(target,command){
 }
 chrome.tabs.onRemoved.addListener(async id=>{const{lastTab}=await chrome.storage.session.get('lastTab');if(lastTab===id)await chrome.storage.session.remove('lastTab');const{target}=await chrome.storage.local.get('target');if(target===id){await chrome.storage.local.remove('target');newPage();}void sync();});
 chrome.tabs.onUpdated.addListener((id,change)=>{if(change.status==='loading')chrome.storage.local.get('target').then(({target})=>{if(target===id)newPage();});});
-chrome.storage.onChanged.addListener((changes,area)=>{if(area==='local'&&(changes.target||changes.tabSharing||changes.bridge)){newPage();nextSync=0;failures=0;if(changes.bridge)void resume();else void sync();}});
+chrome.storage.onChanged.addListener((changes,area)=>{if(area==='local'&&(changes.target||changes.tabSharing||changes.bridge)){if(changes.target)changeTarget(changes.target.newValue??null);if(changes.tabSharing||changes.bridge)newPage();nextSync=0;failures=0;if(changes.bridge)void resume();else void sync();}});
 chrome.webNavigation.onDOMContentLoaded.addListener(async details=>{
  const{target}=await chrome.storage.local.get('target');if(target!==details.tabId||!/^https?:/.test(details.url))return;
  await chrome.scripting.executeScript({target:{tabId:target,frameIds:[details.frameId]},files:['player.js','content.js']}).catch(()=>{});

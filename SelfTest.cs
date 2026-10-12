@@ -187,6 +187,12 @@ internal static class SelfTest
             Check(!await bridgeFixture.ExecuteAsync("set-volume",7,32),"Player volume is pinned to selected tab");
             Check(!await bridgeFixture.ExecuteAsync("set-volume",9,101)&&!await bridgeFixture.ExecuteAsync("set-volume",9,-1)&&!await bridgeFixture.ExecuteAsync("set-volume",9),"Player volume rejects missing and out-of-range values");
             Check(!await bridgeFixture.ExecuteAsync("pause",volume:32),"Volume payload is rejected on other actions");
+            Check(!await bridgeFixture.ExecuteAsync("pause",7),"Playback cannot be routed to a different selected tab");
+            var pinnedPlayback=bridgeFixture.ExecuteAsync("pause",9);
+            var pinnedInstruction=bridgeFixture.Report(new("Music",new[]{"pause"},Generation:generation,Tabs:fixtureTabs,SelectedTab:9))!;
+            Check(pinnedInstruction is {Action:"pause",TabId:9},"Playback carries the explicit selected tab");
+            bridgeFixture.Report(new("Music",new[]{"pause","set-volume"},pinnedInstruction.Id,true,generation,fixtureTabs,9));
+            Check(await pinnedPlayback,"Pinned playback completes after acknowledgement");
             var volumeWork=bridgeFixture.ExecuteAsync("set-volume",9,32);
             var volumeInstruction=bridgeFixture.Report(new("Music",new[]{"set-volume"},Generation:generation,Tabs:fixtureTabs,SelectedTab:9))!;
             Check(volumeInstruction is {TabId:9,Volume:32},"Volume command preserves intended tab and level");
