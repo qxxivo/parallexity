@@ -41,3 +41,16 @@ select,input:not([type=range]):not([type=checkbox]):not([type=radio]),textarea{f
 @media(prefers-reduced-transparency:reduce){.tabs{background:var(--px-surface);-webkit-backdrop-filter:none;backdrop-filter:none}}
 @media(prefers-contrast:more){:root{--px-muted:#e0e0e5;--px-line:#8e8e93;--px-glass-edge:#8e8e93}.tabs{background:var(--px-surface)}}
 @media(max-width:360px){main{padding-left:16px;padding-right:16px}.card{padding:16px}.brand{font-size:17px}.brand img{width:28px;height:28px}.connection{font-size:10px}.browser-toolbar>button{flex:1 1 100%}.tab{font-size:11px;padding-left:4px;padding-right:4px}.transport .round,.transport .play{height:56px}}
+
+.pc-favorites-card .section-heading h2,#pc-panel .section-heading h2{font-size:22px;font-weight:600;letter-spacing:-.35px;margin:0}
+#pc-add{font-size:13px;padding:8px 12px;min-height:44px}
+.pc-favorites{display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-top:16px}
+.tabs{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:4px}
+.tab{min-width:0;flex-direction:column;justify-content:center;padding:8px 2px;font-size:11px}
+.tab svg{width:20px;height:20px}
+.pc-favorite,.pc-window{display:flex;align-items:center;gap:12px;min-width:0;text-align:left;color:var(--px-text);background:var(--px-surface);border:0;padding:16px;border-radius:var(--px-radius-control)}
+.pc-favorite{min-height:88px}.pc-window{width:100%;background:transparent;border-radius:0;border-bottom:.5px solid var(--px-line);min-height:76px;padding:12px 0}
+.pc-window:last-child{border-bottom:0}.pc-app-icon{display:grid;place-items:center;width:36px;height:36px;flex:0 0 36px;border-radius:10px;background:rgb(255 255 255 / 6%);font-size:20px}
+.pc-window-copy{min-width:0;display:flex;flex-direction:column;gap:4px}.pc-window-copy b{font-size:16px;font-weight:600;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}.pc-window-copy>span{font-size:13px;color:var(--px-muted);overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+#pc-result{min-height:36px;margin:16px 4px}#pc-favorites:empty{margin:0}
+@media(max-width:360px){.pc-favorite{padding:12px;gap:8px}.pc-favorite .pc-app-icon{width:28px;height:28px;flex-basis:28px}.pc-window-copy b{font-size:14px}}

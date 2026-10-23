@@ -9,6 +9,37 @@
   }
   let state = null, selected = '', connected = false, pairing = false, polling = false;
   let requestedTab=null;
+  let computerPending=false;
+  async function computerCommand(action,id){
+    if(!connected||computerPending)return;
+    const catalog=action==='focus'?state?.computerPanel?.windows:state?.computerPanel?.favorites;
+    if(!catalog?.some(item=>item.id===id))return;
+    computerPending=true;$('pc-result').textContent=action==='focus'?'Показываем окно…':'Запускаем на ПК…';renderComputer();
+    try{await api('/api/computer',{action,id});$('pc-result').textContent=action==='focus'?'Окно показано на мониторе.':'Запуск передан Windows.';}
+    catch(error){$('pc-result').textContent=error.message;}
+    finally{computerPending=false;await poll();renderComputer();}
+  }
+  function renderComputer(){
+    const pc=state?.computerPanel,windows=pc?.windows||[],favorites=pc?.favorites||[];
+    $('pc-window-count').textContent=String(windows.length);
+    $('pc-windows-empty').classList.toggle('hidden',!!windows.length);
+    $('pc-windows-empty').textContent=pc?'Нет доступных окон. Открой приложение на ПК.':'Обнови приложение ПК, чтобы выбирать окна.';
+    $('pc-favorites-empty').classList.toggle('hidden',!!favorites.length);
+    for(const [container,items,action]of[[$('pc-windows'),windows,'focus'],[$('pc-favorites'),favorites,'launch']]){
+      const key=JSON.stringify(items);
+      if(container.dataset.key!==key){container.replaceChildren(...items.map(item=>{
+        const button=document.createElement('button');button.type='button';button.className=action==='focus'?'pc-window':'pc-favorite';
+        const icon=document.createElement('span');icon.className='pc-app-icon';icon.textContent=item.kind==='link'?'↗':(item.app||item.name||'ПК').slice(0,1);
+        const copy=document.createElement('span');copy.className='pc-window-copy';
+        const title=document.createElement('b');title.textContent=item.app||item.name;copy.append(title);
+        if(action==='focus'){const detail=document.createElement('span');detail.textContent=item.title;copy.append(detail);}
+        button.append(icon,copy);button.addEventListener('click',()=>computerCommand(action,item.id));return button;
+      }));container.dataset.key=key;}
+      container.querySelectorAll('button').forEach(button=>button.disabled=!connected||computerPending);
+    }
+    $('pc-add').disabled=!connected;
+  }
+  $('pc-add').addEventListener('click',()=>toast('На ПК открой parallexity → «Избранное для телефона». Добавленные ярлыки появятся здесь автоматически.'));
   let lastBrowserCommand='Команды ещё не отправлялись';
   function browserTarget(){return requestedTab?.id??state?.browser?.selectedTab;}
   function browserReady(){return !!state?.browser?.connected&&!!browserTarget()&&state.browser.selectedTab===browserTarget();}
@@ -51,6 +82,7 @@
     connected = ok; $('connection').classList.toggle('online', ok); $('connection').querySelector('b').textContent = text;
   }
   function disableControls() {
+    renderComputer();
     pendingVolume = null; editingVolume = false; clearTimeout(volumeTimer);
     for (const row of mixerRows.values()) { row.pending = null; row.editing = false; clearTimeout(row.timer); }
     ['volume', 'mute', 'previous', 'play', 'next', 'session', 'send-text', 'display-off'].forEach(id => $(id).disabled = true);
@@ -66,6 +98,7 @@
   }
   function render() {
     if (!state) return;
+    renderComputer();
     $('computer').textContent = state.computer;
     renderExtras();
     $('display-off').disabled = !connected || commandPending;
@@ -168,7 +201,7 @@
     const diagnostic=state.browser?.diagnostics;
     const statusLabels={'idle':'Подключение вкладки ещё не запрашивалось','connecting':'Подключаем вкладку','ready':'Видеоплеер найден','no-player':'Скрипт подключён, видеоплеер не найден','blocked':'Нет ответа от скриптов вкладки','changed':'Выбор или страница изменились во время подключения'};
     $('browser-diagnostics').textContent=[
-      'Пульт: 0.10.0 · расширение: '+(diagnostic?.version||'не сообщает версию'),
+      'Пульт: 0.11.0 · расширение: '+(diagnostic?.version||'не сообщает версию'),
       'Связь с расширением: '+(state.browser?.connected?'есть':'нет'),
       'Выбрано на телефоне: '+(requestedTab?requestedTab.title+' (№'+requestedTab.id+')':'в этой странице пульта выбор не запрашивался'),
       'Подтверждено расширением: '+(state.browser?.selectedTab?'№'+state.browser.selectedTab+' · '+state.browser.title:'нет выбранной вкладки'),
@@ -368,7 +401,7 @@
     }
   }
   function selectPanel(id, remember = true) {
-    if (!['media-panel', 'sound-panel', 'input-panel'].includes(id)) id = 'media-panel';
+    if (!['pc-panel','media-panel', 'sound-panel', 'input-panel'].includes(id)) id = 'media-panel';
     cancelGesture();
     document.querySelectorAll('.tab-panel').forEach(panel => panel.classList.toggle('hidden', panel.id !== id));
     document.querySelectorAll('.tab').forEach(tab => { const active = tab.dataset.panel === id; tab.classList.toggle('active', active); tab.setAttribute('aria-pressed', String(active)); });
@@ -502,6 +535,6 @@
   selected = preference('player') || '';
   $('precise').checked = preference('precise') === '1';
   $('precise').addEventListener('change', () => preference('precise', $('precise').checked ? '1' : '0'));
-  selectPanel(preference('panel') || 'media-panel', false);
+  selectPanel(preference('panel') || 'pc-panel', false);
   void poll();
 })();

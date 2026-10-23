@@ -43,6 +43,8 @@ internal static class SelfTest
         var fake = new FakeControls { Observe = command => { lock (logLock) File.AppendAllText(commandLog, JsonSerializer.Serialize(command) + "\n"); } };
         await using var server = new RemoteServer(trust, fake, (_, _) => Task.FromResult(true), () => true, new ViewingMode(_=>true));
         await server.StartAsync(port, true);
+        server.ComputerForSettings.Favorites.Add("Музыка","link","https://example.test/music");
+        server.ComputerForSettings.Favorites.Add("Сериал","link","https://example.test/series");
         using var browserTicker=browserDemo?StartBrowserDemo(server):null;
         var url = $"http://127.0.0.1:{server.Port}/#pair={trust.CreatePairingToken()}";
         await File.WriteAllTextAsync(Path.Combine(Environment.CurrentDirectory, "test-preview.json"), JsonSerializer.Serialize(new { url, fake = true }));
@@ -109,6 +111,20 @@ internal static class SelfTest
                 try { AppUpdates.ParseRelease(json); throw new Exception("Accepted invalid release: " + name); }
                 catch (InvalidDataException) { Check(true, name); }
             }
+            Check(!FavoriteStore.ValidTarget("link","javascript:alert(1)")&&!FavoriteStore.ValidTarget("link","file:///C:/Windows/win.ini")&&!FavoriteStore.ValidTarget("link","https://user:password@example.test/"),"Favorites reject script, file and credential-bearing links");
+            Check(!FavoriteStore.ValidTarget("app",@"\\server\share\app.exe")&&!FavoriteStore.ValidTarget("app","app.exe")&&!FavoriteStore.ValidTarget("app",@"C:\test.cmd"),"Favorites accept only local absolute EXE targets");
+            var savedFavorites=server.ComputerForSettings.Favorites;
+            savedFavorites.Add("Мой сайт","link","https://example.test/watch?token=PRIVATE-FAVORITE");
+            var savedId=savedFavorites.Items.Single().Id;
+            Check(new FavoriteStore(folder).Items.Single().Id==savedId,"Favorites survive reopening their local store");
+            var nativeWindows=new WindowCatalog().Read();
+            Check(nativeWindows.All(window=>window.Id.Length==24&&window.Title.Length<=256)&&!new WindowCatalog().Focus("missing"),"Native window discovery returns bounded opaque identifiers and rejects unpublished windows");
+            var publicComputer=JsonSerializer.Serialize(server.ComputerForSettings.Read());
+            Check(!publicComputer.Contains("PRIVATE-FAVORITE")&&!publicComputer.Contains("Target"),"Phone favorite catalog excludes URLs and local targets");
+            Check(!server.ComputerForSettings.Execute(new("launch","unknown")),"Unknown favorite cannot launch a target");
+            Check(server.ComputerForSettings.Execute(new("launch",savedId))&&!server.ComputerForSettings.Execute(new("launch",savedId)),"Demo launch acknowledges saved favorite and rejects rapid repeats without starting software");
+            savedFavorites.Remove(savedId);
+            Check(!server.ComputerForSettings.Execute(new("launch",savedId))&&new FavoriteStore(folder).Items.Length==0,"Deleted favorite cannot be launched and removal persists");
             var instanceName = "test-" + Guid.NewGuid().ToString("N");
             using (var owner = new DesktopInstance(instanceName))
             {
@@ -299,6 +315,7 @@ internal static class SelfTest
             Check((await Post("/api/command", new { action = "display-off" })).StatusCode == HttpStatusCode.Unauthorized && fake.Commands == 0, "Unpaired client cannot turn off display");
             Check((await Post("/api/timer",new{minutes=15,action="display-off"})).StatusCode==HttpStatusCode.Unauthorized,"Unpaired phone cannot start timer");
             Check((await Post("/api/browser",new{action="skip-ad"})).StatusCode==HttpStatusCode.Unauthorized,"Unpaired phone cannot control browser");
+            Check((await Post("/api/computer",new{action="focus",id="demo-chrome"})).StatusCode==HttpStatusCode.Unauthorized,"Unpaired phone cannot switch windows");
             Check((await Post("/browser/pair",new{token=new string('0',32),name="Browser"})).StatusCode==HttpStatusCode.Forbidden,"Website origin cannot pair browser bridge");
             var extensionOrigin="chrome-extension://"+new string('a',32);
             var apiBridgeCode=server.CreateBrowserCode().Split(':')[1];
@@ -322,6 +339,11 @@ internal static class SelfTest
             approved = true;
             token = trust.CreatePairingToken();
             Check((await Post("/api/pair", new { token, name = "Phone" })).IsSuccessStatusCode, "Pairing approved on host grants a session");
+            Check((await Post("/api/computer",new{action="focus",id="demo-chrome"})).IsSuccessStatusCode,"Trusted phone can request a demo window without enabling pointer input");
+            Check((await Post("/api/computer",new{action="focus",id="closed-window"})).StatusCode==HttpStatusCode.Conflict,"Missing window returns an explicit failure");
+            Check((await Post("/api/computer",new{action="launch",id="C:\\Windows\\notepad.exe"})).StatusCode==HttpStatusCode.Conflict,"Phone cannot launch a raw executable path");
+            Check((await Post("/api/computer",new{action="add",id="example"})).StatusCode==HttpStatusCode.BadRequest,"Phone cannot create launcher entries through command API");
+            Check((await Post("/api/computer",new{action="focus",id="demo-chrome"},"https://attacker.invalid")).StatusCode==HttpStatusCode.Forbidden,"Window commands enforce same-origin policy");
             Check((await Post("/api/pair", new { token, name = "Phone" })).StatusCode == HttpStatusCode.Forbidden, "Pairing token cannot be replayed");
             async Task<HttpResponseMessage> ReportCatalog(object body)
             {

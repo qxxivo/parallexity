@@ -10,7 +10,7 @@ public record MediaState(string Id, string App, string Title, string Artist, boo
     bool CanPlay, bool CanPause, bool CanNext, bool CanPrevious);
 public record AppAudioState(string Id, string Name, int Volume, bool Muted, bool Active);
 public record RemoteState(string Computer, AudioState Audio, MediaState[] Media, string? MediaError,
-    AppAudioState[]? Apps = null, bool InputEnabled = false, PcTimerState? Timer = null, BrowserState? Browser = null, bool ViewingMode = false);
+    AppAudioState[]? Apps = null, bool InputEnabled = false, PcTimerState? Timer = null, BrowserState? Browser = null, bool ViewingMode = false, ComputerState? ComputerPanel = null);
 public record RemoteCommand(string Action, int? Volume = null, string? Session = null,
     string? App = null, int? Dx = null, int? Dy = null, string? Key = null, string? Text = null, string? Drag = null);
 

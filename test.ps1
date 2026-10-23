@@ -2,7 +2,7 @@ $ErrorActionPreference = 'Stop'
 Push-Location $PSScriptRoot
 try {
     $localSdk = Join-Path $PSScriptRoot '.tools\dotnet\dotnet.exe'
-    $sdk = if (Test-Path -LiteralPath $localSdk) { $localSdk } else { 'dotnet' }
+    $sdk = if ($env:PARALLEXITY_DOTNET) { $env:PARALLEXITY_DOTNET } elseif (Test-Path -LiteralPath $localSdk) { $localSdk } else { 'dotnet' }
     $env:DOTNET_CLI_TELEMETRY_OPTOUT = '1'
     $env:DOTNET_GENERATE_ASPNET_CERTIFICATE = 'false'
     $env:DOTNET_CLI_HOME = Join-Path $PSScriptRoot '.tools\cli'

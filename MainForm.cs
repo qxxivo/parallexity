@@ -138,6 +138,7 @@ public sealed class MainForm : Form
         right.Controls.Add(startupToggle);
         if (designPreview) startupToggle.Enabled = false;
         right.Controls.Add(Paragraph("Сразу в трей, без открытия окна.", Muted));
+        var favoritesSetup=Button("Избранное для телефона",(_,_)=>ShowFavorites());favoritesSetup.Width=270;right.Controls.Add(favoritesSetup);
         var browserSetup=Button("Подключить браузер",(_,_)=>ShowBrowserSetup());browserSetup.Width=270;right.Controls.Add(browserSetup);
         var help = Button("Помощь с подключением", (_, _) => ShowHelp()); help.Width = 270; right.Controls.Add(help);
         void FitContents(FlowLayoutPanel panel)
@@ -366,6 +367,46 @@ public sealed class MainForm : Form
         var download=Button("Подготовить расширение",(_,_)=>PrepareBrowserExtension());download.Location=new(250,248);download.Width=255;dialog.Controls.Add(download);
         var disconnect=Button("Отключить браузер",(_,_)=>{server.DisconnectBrowser();dialog.Close();});disconnect.Location=new(18,300);dialog.Controls.Add(disconnect);
         dialog.ShowDialog(this);
+    }
+
+    private void ShowFavorites()
+    {
+        using var dialog=new Form {Text="Избранное для телефона",Size=new(600,610),MinimumSize=new(560,580),StartPosition=FormStartPosition.CenterParent,BackColor=Background,ForeColor=DesktopTheme.Text,Font=Font};
+        dialog.HandleCreated+=(_,_)=>{var dark=1;if(DwmSetWindowAttribute(dialog.Handle,20,ref dark,sizeof(int))!=0)DwmSetWindowAttribute(dialog.Handle,19,ref dark,sizeof(int));};
+        var layout=new TableLayoutPanel{Dock=DockStyle.Fill,Padding=new(24),ColumnCount=1,RowCount=7};
+        layout.ColumnStyles.Add(new(SizeType.Percent,100));
+        foreach(var height in new[]{64,180,40,44,44,52,60})layout.RowStyles.Add(new(SizeType.Absolute,height));
+        dialog.Controls.Add(layout);
+        var note=Paragraph("Добавь приложения и сайты здесь.\nНа телефоне они появятся в разделе «ПК».",Muted);note.Dock=DockStyle.Fill;layout.Controls.Add(note,0,0);
+        var list=new ListBox{Dock=DockStyle.Fill,BackColor=Card,ForeColor=DesktopTheme.Text,BorderStyle=BorderStyle.None,DisplayMember="Name",IntegralHeight=false,AccessibleName="Сохранённое избранное",DrawMode=DrawMode.OwnerDrawFixed,ItemHeight=40};layout.Controls.Add(list,0,1);
+        list.DrawItem+=(_,e)=>{if(e.Index<0)return;using var fill=new SolidBrush(e.State.HasFlag(DrawItemState.Selected)?DesktopTheme.Surface:Card);e.Graphics.FillRectangle(fill,e.Bounds);TextRenderer.DrawText(e.Graphics,((SavedFavorite)list.Items[e.Index]).Name,list.Font,Rectangle.Inflate(e.Bounds,-8,0),DesktopTheme.Text,TextFormatFlags.Left|TextFormatFlags.VerticalCenter|TextFormatFlags.EndEllipsis);if(e.State.HasFlag(DrawItemState.Focus))e.DrawFocusRectangle();};
+        var remove=Button("Удалить выбранное",(_,_)=>{});remove.Dock=DockStyle.Fill;layout.Controls.Add(remove,0,2);
+        var name=new TextBox{Dock=DockStyle.Fill,PlaceholderText="Название, например «Музыка»",MaxLength=40,BackColor=DesktopTheme.Surface,ForeColor=DesktopTheme.Text,BorderStyle=BorderStyle.FixedSingle,AccessibleName="Название ярлыка"};layout.Controls.Add(name,0,3);
+        var link=new TextBox{Dock=DockStyle.Fill,PlaceholderText="https://… — для ссылки",MaxLength=2048,BackColor=DesktopTheme.Surface,ForeColor=DesktopTheme.Text,AccessibleName="Адрес сайта"};layout.Controls.Add(link,0,4);
+        var actions=new FlowLayoutPanel{Dock=DockStyle.Fill,WrapContents=false};layout.Controls.Add(actions,0,5);
+        list.SelectedIndexChanged+=(_,_)=>remove.Enabled=list.SelectedItem is SavedFavorite;
+        void Reload(){list.Items.Clear();list.Items.AddRange(server.ComputerForSettings.Favorites.Items);if(list.Items.Count>0)list.SelectedIndex=0;remove.Enabled=list.SelectedItem is SavedFavorite;}
+        void Add(string kind,string target)
+        {
+            try{server.ComputerForSettings.Favorites.Add(name.Text,kind,target);name.Clear();link.Clear();Reload();}
+            catch(Exception error)when(error is ArgumentException or InvalidOperationException or IOException or UnauthorizedAccessException){MessageBox.Show(dialog,error.Message,"Не удалось сохранить",MessageBoxButtons.OK,MessageBoxIcon.Information);}
+        }
+        var app=Button("Выбрать приложение…",(_,_)=>
+        {
+            using var picker=new OpenFileDialog{Title="Выбрать приложение для избранного",Filter="Приложение Windows (*.exe)|*.exe",CheckFileExists=true,Multiselect=false};
+            if(picker.ShowDialog(dialog)!=DialogResult.OK)return;
+            if(string.IsNullOrWhiteSpace(name.Text))name.Text=Path.GetFileNameWithoutExtension(picker.FileName);
+            Add("app",picker.FileName);
+        });
+        var website=Button("Добавить ссылку",(_,_)=>Add("link",link.Text));actions.Controls.Add(app);actions.Controls.Add(website);
+        remove.Click+=(_,_)=>
+        {
+            if(list.SelectedItem is not SavedFavorite favorite)return;
+            try{server.ComputerForSettings.Favorites.Remove(favorite.Id);Reload();}
+            catch(Exception error)when(error is IOException or UnauthorizedAccessException){MessageBox.Show(dialog,error.Message,"Не удалось сохранить");}
+        };
+        layout.Controls.Add(Paragraph("До 24 ярлыков. Приложения — локальные EXE без параметров.\nСсылки — только http и https. Нажатие запускает их на ПК.",Muted),0,6);
+        Reload();dialog.ShowDialog(this);
     }
 
     private void PrepareBrowserExtension()

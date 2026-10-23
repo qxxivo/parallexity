@@ -2,7 +2,7 @@ param([switch]$PackageOnly)
 $ErrorActionPreference = 'Stop'
 $projectDirectory = $PSScriptRoot
 $localSdk = Join-Path $projectDirectory '.tools\dotnet\dotnet.exe'
-$sdk = if (Test-Path -LiteralPath $localSdk) { $localSdk } else { 'dotnet' }
+$sdk = if ($env:PARALLEXITY_DOTNET) { $env:PARALLEXITY_DOTNET } elseif (Test-Path -LiteralPath $localSdk) { $localSdk } else { 'dotnet' }
 $env:DOTNET_CLI_TELEMETRY_OPTOUT = '1'
 $env:DOTNET_GENERATE_ASPNET_CERTIFICATE = 'false'
 $env:DOTNET_CLI_HOME = Join-Path $projectDirectory '.tools\cli'

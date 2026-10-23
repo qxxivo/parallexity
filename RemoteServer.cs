@@ -25,6 +25,8 @@ public sealed class RemoteServer : IAsyncDisposable
     private PcTimer? pcTimer;
     private readonly BrowserBridge browser;
     private readonly ViewingMode viewing;
+    private readonly ComputerHub computer;
+    internal ComputerHub ComputerForSettings=>computer;
     private readonly Func<DateTimeOffset>? timerClock;
     internal Task TickTimerAsync() => pcTimer?.TickAsync() ?? Task.CompletedTask;
     public bool ViewingEnabled => viewing.Enabled;
@@ -36,7 +38,7 @@ public sealed class RemoteServer : IAsyncDisposable
     public string[] Addresses => NetworkAddresses().Select(ip => $"http://{ip}:{Port}").ToArray();
 
     public RemoteServer(TrustStore trust, IDesktopControls controls, Func<string, string, Task<bool>> approve, Func<bool>? allowInput = null, ViewingMode? viewingMode = null, Func<DateTimeOffset>? timerClock = null)
-    { this.trust = trust; this.controls = controls; this.approve = approve; this.allowInput = allowInput ?? (() => false); browser=new(file:Path.Combine(trust.Folder,"browser-bridge.txt")); viewing=viewingMode??new(); this.timerClock=timerClock; }
+    { this.trust = trust; this.controls = controls; this.approve = approve; this.allowInput = allowInput ?? (() => false); browser=new(file:Path.Combine(trust.Folder,"browser-bridge.txt")); viewing=viewingMode??new(); this.timerClock=timerClock;computer=new(trust.Folder,controls is not DesktopControls); }
 
     public async Task StartAsync(int port = 8765, bool loopbackOnly = false)
     {
@@ -140,7 +142,14 @@ public sealed class RemoteServer : IAsyncDisposable
         {
             if (!trust.IsTrusted(context.Request.Cookies["pr_session"])) return Results.Unauthorized();
             viewing.CheckTrust(trust.IsTrusted);
-            return Results.Ok((await controls.ReadAsync()) with { InputEnabled = allowInput(), Timer=pcTimer.State, Browser=browser.State, ViewingMode=viewing.Enabled });
+            return Results.Ok((await controls.ReadAsync()) with { InputEnabled = allowInput(), Timer=pcTimer.State, Browser=browser.State, ViewingMode=viewing.Enabled,ComputerPanel=computer.Read() });
+        });
+        instance.MapPost("/api/computer",async(HttpContext context)=>
+        {
+            if(!trust.IsTrusted(context.Request.Cookies["pr_session"]))return Results.Unauthorized();
+            var request=await context.Request.ReadFromJsonAsync<ComputerRequest>();
+            if(request is null||request.Action is not ("focus" or "launch")||string.IsNullOrEmpty(request.Id)||request.Id.Length>64)return Results.BadRequest();
+            return await Task.Run(()=>computer.Execute(request))?Results.Ok(new{done=true}):Results.Json(new{error=request.Action=="focus"?"Окно закрыто или Windows не разрешила вывести его вперёд. Проверь ПК и повтори.":"Не удалось запустить ярлык. Проверь избранное в приложении ПК или подожди пару секунд."},statusCode:409);
         });
         instance.MapPost("/api/viewing",async(HttpContext context)=>
         {
