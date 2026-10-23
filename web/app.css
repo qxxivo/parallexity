@@ -15,3 +15,6 @@ header{margin-bottom:24px}.brand{font-size:19px}.brand-dot,.heading-dot{display:
 
 .browser-volume .volume-top label{margin:0}
 .browser-diagnostics{margin-top:16px}.browser-diagnostics summary{font-size:13px;cursor:pointer}.browser-diagnostics pre{font:12px/1.7 system-ui;white-space:pre-wrap;overflow-wrap:anywhere;margin-top:12px}
+/* Keep remote gestures from zooming the page; the touchpad retains its own touch-action:none. */
+html,body{touch-action:pan-x pan-y}
+input:not([type=range]):not([type=checkbox]):not([type=radio]),textarea,select{font-size:16px}

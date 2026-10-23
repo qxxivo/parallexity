@@ -110,6 +110,8 @@ public sealed class RemoteServer : IAsyncDisposable
 
         instance.MapGet("/", () => Asset("index.html", "text/html; charset=utf-8"));
         instance.MapGet("/app.css", () => Asset("app.css", "text/css; charset=utf-8"));
+        instance.MapGet("/design-tokens.css", () => Asset("design-tokens.css", "text/css; charset=utf-8"));
+        instance.MapGet("/apple-theme.css", () => Asset("apple-theme.css", "text/css; charset=utf-8"));
         instance.MapGet("/app.js", () => Asset("app.js", "text/javascript; charset=utf-8"));
         instance.MapGet("/icon.svg", () => Asset("icon.svg", "image/svg+xml"));
         instance.MapGet("/manifest.webmanifest", () => Asset("manifest.webmanifest", "application/manifest+json"));

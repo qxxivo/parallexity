@@ -10,7 +10,7 @@
     <ApplicationIcon>assets\parallexity.ico</ApplicationIcon>
     <AssemblyName>parallexity</AssemblyName>
     <RootNamespace>PhoneRemote</RootNamespace>
-    <Version>0.9.3</Version>
+    <Version>0.10.0</Version>
     <EnableCompressionInSingleFile>true</EnableCompressionInSingleFile>
   </PropertyGroup>
   <ItemGroup>

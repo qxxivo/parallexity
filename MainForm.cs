@@ -14,9 +14,9 @@ public sealed class MainForm : Form
         if (DwmSetWindowAttribute(Handle, 20, ref dark, sizeof(int)) != 0)
             DwmSetWindowAttribute(Handle, 19, ref dark, sizeof(int));
     }
-    private static readonly Color Background = Color.FromArgb(18, 18, 21);
-    private static readonly Color Card = Color.FromArgb(28, 28, 31);
-    private static readonly Color Muted = Color.FromArgb(160, 160, 170);
+    private static readonly Color Background = DesktopTheme.Background;
+    private static readonly Color Card = DesktopTheme.Card;
+    private static readonly Color Muted = DesktopTheme.Muted;
     private readonly TrustStore trust;
     private readonly RemoteServer server;
     private readonly NotifyIcon tray;
@@ -47,9 +47,9 @@ public sealed class MainForm : Form
     {
         this.designPreview = designPreview;
         if (startInTray) { WindowState = FormWindowState.Minimized; ShowInTaskbar = false; }
-        Text = $"parallexity {AppUpdates.CurrentVersion.ToString(3)} · пульт для твоего ПК";
-        Size = new(820, 800);
-        MinimumSize = new(800, 760);
+        Text = designPreview ? "parallexity · предпросмотр дизайна" : $"parallexity {AppUpdates.CurrentVersion.ToString(3)} · пульт для твоего ПК";
+        Size = new(920, 900);
+        MinimumSize = new(840, 800);
         StartPosition = FormStartPosition.CenterScreen;
         BackColor = Background;
         ForeColor = Color.White;
@@ -63,55 +63,66 @@ public sealed class MainForm : Form
         var root = new TableLayoutPanel { Dock = DockStyle.Fill, Padding = new(24), ColumnCount = 2, RowCount = 4 };
         root.ColumnStyles.Add(new(SizeType.Percent, 50)); root.ColumnStyles.Add(new(SizeType.Percent, 50));
         root.RowStyles.Add(new(SizeType.Absolute, 100)); root.RowStyles.Add(new(SizeType.Percent, 100));
-        root.RowStyles.Add(new(SizeType.Absolute, 48)); root.RowStyles.Add(new(SizeType.Absolute, 48));
+        root.RowStyles.Add(new(SizeType.Absolute, 48)); root.RowStyles.Add(new(SizeType.Absolute, 64));
         Controls.Add(root);
         var header = new FlowLayoutPanel { Dock = DockStyle.Fill, WrapContents = false, Padding = new(4, 10, 0, 0) };
         var brandMark = new PictureBox { Image = Icon.ToBitmap(), Size = new(56, 56), SizeMode = PictureBoxSizeMode.Zoom, Margin = new(0, 0, 14, 0) };
         header.Controls.Add(brandMark);
         var brand = new FlowLayoutPanel { AutoSize = true, FlowDirection = FlowDirection.TopDown, WrapContents = false };
         brand.Controls.Add(Label("parallexity", 25, FontStyle.Bold));
-        brand.Controls.Add(Label("Пульт для твоего ПК", 10, color: Muted));
+        brand.Controls.Add(Label(designPreview ? "Предпросмотр · команды ПК имитируются" : "Твой компьютер. Под рукой.", 10, color: Muted));
         header.Controls.Add(brand);
         FormClosed += (_, _) => brandMark.Image?.Dispose();
         root.Controls.Add(header, 0, 0); root.SetColumnSpan(header, 2);
 
-        var leftCard = new RoundedCard { Dock = DockStyle.Fill, Padding = new(20), Margin = new(0, 0, 8, 0) };
+        var leftCard = new RoundedCard { Dock = DockStyle.Fill, Padding = new(24), Margin = new(0, 0, 8, 0) };
         var left = new FlowLayoutPanel { Dock = DockStyle.Fill, BackColor = Card, FlowDirection = FlowDirection.TopDown, WrapContents = false, AutoScroll = true };
         leftCard.Controls.Add(left);
-        left.Controls.Add(Label("Подключить телефон", 15, FontStyle.Bold));
-        left.Controls.Add(Label("Телефон и ПК в одной Wi-Fi сети", 9, color: Muted));
-        qr.Size = new(190, 190); qr.SizeMode = PictureBoxSizeMode.Zoom; qr.BackColor = Color.White; qr.Margin = new(50, 14, 0, 12);
+        left.Controls.Add(Label("Подключить телефон", 17, FontStyle.Bold));
+        left.Controls.Add(Label("Отсканируй QR-код камерой телефона", 10, color: Muted));
+        qr.Size = new(208, 208); qr.SizeMode = PictureBoxSizeMode.Zoom; qr.BackColor = Color.White; qr.Margin = new(50, 20, 0, 16);
         left.Controls.Add(qr);
         expiry.AutoSize = true; expiry.ForeColor = Muted; expiry.Font = new("Segoe UI", 9); expiry.Margin = new(35, 0, 0, 16); left.Controls.Add(expiry);
         var copy = Button("Скопировать ссылку", (_, _) => { if (pairingUrl is not null) { Clipboard.SetText(pairingUrl); status.Text = "Ссылка скопирована. Открой её на телефоне."; } });
-        copy.Width = 270; copy.Height = 42; left.Controls.Add(copy);
-        refreshQr = Button("Новый QR-код", (_, _) => GenerateQr()); refreshQr.Width = 270; refreshQr.Height = 40; left.Controls.Add(refreshQr);
+        copy.Width = 270; copy.Height = 48; copy.BackColor=DesktopTheme.Text;copy.ForeColor=Background;left.Controls.Add(copy);
+        refreshQr = Button("Новый QR-код", (_, _) => GenerateQr()); refreshQr.Width = 270; refreshQr.Height = 48; left.Controls.Add(refreshQr);
         var network = new FlowLayoutPanel { AutoSize = true, AutoSizeMode = AutoSizeMode.GrowAndShrink, Width = 280, FlowDirection = FlowDirection.TopDown, WrapContents = false };
         address.AccessibleName = "Адрес подключения";
         address.Width = 270; address.DropDownStyle = ComboBoxStyle.DropDownList;
-        address.BackColor = Card; address.ForeColor = Color.White; address.FlatStyle = FlatStyle.Flat;
+        address.BackColor = DesktopTheme.Surface; address.ForeColor = Color.White; address.FlatStyle = FlatStyle.Flat;
         address.SelectedIndexChanged += (_, _) => { if (started && !refreshingAddresses) GenerateQr(); }; network.Controls.Add(address);
         left.Controls.Add(network);
+        left.Controls.Add(Paragraph("Телефон и ПК должны быть подключены\nк одному домашнему роутеру.", Muted));
         root.Controls.Add(leftCard, 0, 1);
 
-        var rightCard = new RoundedCard { Dock = DockStyle.Fill, Padding = new(20), Margin = new(8, 0, 0, 0) };
+        var rightCard = new RoundedCard { Dock = DockStyle.Fill, Padding = new(24), Margin = new(8, 0, 0, 0) };
         var right = new FlowLayoutPanel { Dock = DockStyle.Fill, BackColor = Card, FlowDirection = FlowDirection.TopDown, WrapContents = false, AutoScroll = true };
         rightCard.Controls.Add(right);
-        right.Controls.Add(Label("Мои устройства", 15, FontStyle.Bold));
-        right.Controls.Add(Paragraph("Подключение подтверждается здесь.\nСохранённые телефоны — ниже.", Muted));
+        right.Controls.Add(Label("Мои устройства", 17, FontStyle.Bold));
+        right.Controls.Add(Paragraph("Доверенные телефоны с доступом к пульту.", Muted));
         devices.Size = new(270, 88); devices.BackColor = Card; devices.ForeColor = Color.White; devices.BorderStyle = BorderStyle.None; devices.DisplayMember = "Name";
+        devices.DrawMode=DrawMode.OwnerDrawFixed;devices.ItemHeight=48;
+        devices.DrawItem+=(_,e)=>
+        {
+            if(e.Index<0)return;
+            using var fill=new SolidBrush(e.State.HasFlag(DrawItemState.Selected)?DesktopTheme.Surface:Card);
+            e.Graphics.FillRectangle(fill,e.Bounds);
+            var device=devices.Items[e.Index] as TrustedDevice;
+            TextRenderer.DrawText(e.Graphics,device?.Name??"Телефон",devices.Font,Rectangle.Inflate(e.Bounds,-12,0),DesktopTheme.Text,TextFormatFlags.VerticalCenter|TextFormatFlags.Left|TextFormatFlags.EndEllipsis);
+            if(e.State.HasFlag(DrawItemState.Focus))e.DrawFocusRectangle();
+        };
         right.Controls.Add(devices);
         emptyDevices.Text = "Пока нет подключённых телефонов.\nОтсканируй QR-код слева."; emptyDevices.ForeColor = Muted;
-        emptyDevices.Size = new(270, 88); emptyDevices.TextAlign = ContentAlignment.MiddleLeft;
+        emptyDevices.Size = new(270, 64); emptyDevices.TextAlign = ContentAlignment.MiddleLeft;
         right.Controls.Add(emptyDevices);
         disconnectButton = Button("Отключить выбранное", (_, _) => { if (devices.SelectedItem is TrustedDevice selected) trust.Revoke(selected.Id); });
         disconnectButton.Width = 270; right.Controls.Add(disconnectButton);
-        right.Controls.Add(Label("Настройки", 11, FontStyle.Bold));
-        var inputToggle = new ToggleSwitch { Text = "Мышь и клавиатура", Width = 270, Height = 36, ForeColor = Color.White, Margin = new(0, 8, 0, 0) };
+        right.Controls.Add(Label("Настройки", 13, FontStyle.Bold));
+        var inputToggle = new ToggleSwitch { Text = "Мышь и клавиатура", Width = 270, Height = 48, ForeColor = Color.White, Margin = new(0, 8, 0, 0) };
         inputToggle.CheckedChanged += (_, _) => inputEnabled = inputToggle.Checked;
         right.Controls.Add(inputToggle);
         right.Controls.Add(Paragraph("Ввод в активное окно ПК.\nПосле перезапуска разреши заново.", Muted));
-        var startupToggle = new ToggleSwitch { Text = "Запускать с Windows", Width = 270, Height = 36, ForeColor = Color.White, Margin = new(0, 8, 0, 0) };
+        var startupToggle = new ToggleSwitch { Text = "Запускать с Windows", Width = 270, Height = 48, ForeColor = Color.White, Margin = new(0, 8, 0, 0) };
         try { startupToggle.Checked = DesktopStartup.Enabled; } catch { startupToggle.Enabled = false; }
         var changingStartup = false;
         startupToggle.CheckedChanged += (_, _) =>
@@ -127,12 +138,26 @@ public sealed class MainForm : Form
         right.Controls.Add(startupToggle);
         if (designPreview) startupToggle.Enabled = false;
         right.Controls.Add(Paragraph("Сразу в трей, без открытия окна.", Muted));
+        var browserSetup=Button("Подключить браузер",(_,_)=>ShowBrowserSetup());browserSetup.Width=270;right.Controls.Add(browserSetup);
         var help = Button("Помощь с подключением", (_, _) => ShowHelp()); help.Width = 270; right.Controls.Add(help);
+        void FitContents(FlowLayoutPanel panel)
+        {
+            var available=Math.Max(180,panel.ClientSize.Width-SystemInformation.VerticalScrollBarWidth-4);
+            foreach(Control child in panel.Controls)
+            {
+                if(child==qr){child.Margin=new(Math.Max(0,(available-child.Width)/2),20,0,16);continue;}
+                if(child==expiry){child.Margin=new(0,0,0,16);}
+                if(child is System.Windows.Forms.Label label){if(label.AutoSize)label.MaximumSize=new(available,0);else label.Width=available;}
+                else child.Width=available;
+            }
+            address.Width=Math.Max(180,available-8);
+        }
+        left.SizeChanged+=(_,_)=>FitContents(left);right.SizeChanged+=(_,_)=>FitContents(right);
         root.Controls.Add(rightCard, 1, 1);
         status.Dock = DockStyle.Fill; status.TextAlign = ContentAlignment.MiddleLeft; status.ForeColor = Color.FromArgb(210, 210, 220); status.Text = "Запускаем пульт…";
         root.Controls.Add(status, 0, 2); root.SetColumnSpan(status, 2);
         updateButton = Button("Проверить обновления", async (_, _) => await UpdateAsync());
-        updateButton.Height = 40; root.Controls.Add(updateButton, 0, 3);
+        updateButton.Height = 48; root.Controls.Add(updateButton, 0, 3);
         var footer = Paragraph("Закрытие окна сворачивает пульт в трей.\nВыход и перезапуск — в меню возле часов.", Muted);
         footer.Dock = DockStyle.Fill; footer.Font = new("Segoe UI", 9); root.Controls.Add(footer, 1, 3);
 
@@ -159,6 +184,7 @@ public sealed class MainForm : Form
         };
         Shown += async (_, _) =>
         {
+            FitContents(left);FitContents(right);
             if (startInTray) { Hide(); WindowState = FormWindowState.Normal; ShowInTaskbar = true; }
             timer.Start();
             await StartAsync();
@@ -291,6 +317,7 @@ public sealed class MainForm : Form
         devices.Items.Clear(); devices.Items.AddRange(trust.Devices);
         devices.Visible = devices.Items.Count > 0; emptyDevices.Visible = devices.Items.Count == 0;
         disconnectButton.Enabled = devices.Items.Count > 0;
+        disconnectButton.Visible = devices.Items.Count > 0;
         if (devices.Items.Count > 0) devices.SelectedIndex = Math.Max(0, devices.Items.Cast<TrustedDevice>().ToList().FindIndex(d => d.Id == selectedId));
     }
     private void Restore() { Show(); WindowState = FormWindowState.Normal; Activate(); }
@@ -378,7 +405,7 @@ public sealed class MainForm : Form
         => new() { Text = text, AutoSize = true, MaximumSize = new(600, 0), ForeColor = color, Margin = new(0, 0, 0, 14) };
     private static Button Button(string text, EventHandler click)
     {
-        var button = new RoundedButton { Text = text, Size = new(190, 38), BackColor = Color.FromArgb(44,44,50), ForeColor = Color.White, Margin = new(0, 0, 0, 9), Cursor = Cursors.Hand };
+        var button = new RoundedButton { Text = text, Size = new(190, 48), BackColor = DesktopTheme.Surface, ForeColor = DesktopTheme.Text, Margin = new(0, 0, 0, 8), Cursor = Cursors.Hand };
         button.FlatAppearance.BorderColor = Color.FromArgb(65, 65, 72); button.Click += click; return button;
     }
 }

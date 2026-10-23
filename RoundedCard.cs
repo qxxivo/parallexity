@@ -4,17 +4,14 @@ namespace PhoneRemote;
 
 internal sealed class RoundedCard : Panel
 {
-    internal RoundedCard() { DoubleBuffered = true; BackColor = Color.FromArgb(28, 28, 31); }
+    internal RoundedCard() { DoubleBuffered = true; BackColor = DesktopTheme.Card; ResizeRedraw = true; }
     protected override void OnPaintBackground(PaintEventArgs e)
     {
-        e.Graphics.Clear(Parent?.BackColor ?? Color.FromArgb(18, 18, 21));
+        e.Graphics.Clear(Parent?.BackColor ?? DesktopTheme.Background);
         if (Width < 32 || Height < 32) return;
         e.Graphics.SmoothingMode = SmoothingMode.AntiAlias;
-        using var shape = new GraphicsPath();
-        const int d = 28;
-        shape.AddArc(1, 1, d, d, 180, 90); shape.AddArc(Width-d-2, 1, d, d, 270, 90);
-        shape.AddArc(Width-d-2, Height-d-2, d, d, 0, 90); shape.AddArc(1, Height-d-2, d, d, 90, 90); shape.CloseFigure();
-        using var fill = new SolidBrush(BackColor); using var border = new Pen(Color.FromArgb(49, 49, 54));
-        e.Graphics.FillPath(fill, shape); e.Graphics.DrawPath(border, shape);
+        using var shape = DesktopTheme.Shape(new RectangleF(0,0,Width-1,Height-1),DesktopTheme.CardRadius*DeviceDpi/96f);
+        using var fill = new SolidBrush(BackColor);
+        e.Graphics.FillPath(fill, shape);
     }
 }
